@@ -212,10 +212,10 @@ class Ui(QMainWindow):
             self.dic.connect(self.worker.processing)
             self.dic.emit(dictio)
             
-            self.Process.setEnabled(False)
-            self.thread.finished.connect(
-                lambda: self.Process.setEnabled(True)
-            )
+            # self.Process.setEnabled(False)
+            # self.thread.finished.connect(
+            #     lambda: self.Process.setEnabled(True)
+            # )
          
     def updateConsole(self,string):
         self.Console.appendPlainText(string)

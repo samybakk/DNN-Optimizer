@@ -23,7 +23,7 @@ class Worker(QObject):
             if dictio['d'].isChecked():
                 dictio['PWInstance'].update_progress_signal.emit('Starting Knowledge transfer...')
                 teacher_model = tf_load(dictio['teacher_model_path'])
-                model = distill_model_tensorflow(model, teacher_model, dictio['batch_size'],
+                model = distill_model_tensorflow(model, teacher_model,dictio['dataset_path'], dictio['batch_size'],
                                          dictio['temperature'], dictio['Alpha'], dictio['DKepochs'],
                                          dictio['PWInstance'])
                 dictio['PWInstance'].undo_progress_signal.emit()
@@ -31,9 +31,12 @@ class Worker(QObject):
 
             if dictio['p'].isChecked():
                 dictio['PWInstance'].update_progress_signal.emit('Starting Pruning...')
-                model = prune_model_tensorflow(model, dictio['pr'], dictio['epochs'],
-                                       dictio['batch_size'],dictio['convert_tflite'],
-                                       dictio['q'].isChecked(), dictio['PWInstance'])
+                # model = prune_model_tensorflow(model, dictio['pr'], dictio['epochs'],
+                #                        dictio['batch_size'],dictio['convert_tflite'],
+                #                        dictio['q'].isChecked(), dictio['PWInstance'])
+
+                model = basic_prune_model_tensorflow(model, dictio['pr'])
+
                 dictio['PWInstance'].undo_progress_signal.emit()
                 dictio['PWInstance'].update_progress_signal.emit('Pruning completed')
 
