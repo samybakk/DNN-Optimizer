@@ -15,7 +15,7 @@ class ProgressWindow(QMainWindow):
     update_progress_signal = pyqtSignal(str)
     undo_progress_signal = pyqtSignal()
     
-    def __init__(self,model_path):
+    def __init__(self,model_path,save_directory):
         
         super().__init__()
         self.setWindowTitle("Progress Monitor")
@@ -54,9 +54,11 @@ class ProgressWindow(QMainWindow):
         self.pruningGraph.setBackground('w')
         pen = mkPen(color=(255, 127, 0))
         self.data_line2 = self.pruningGraph.plot(self.graph2_x, self.graph2_y, pen=pen)
+        
+        self.save_directory = save_directory
     
     def displayDirectory(self):
-        subprocess.Popen('explorer '+os.path.abspath('./Models/Output Models'))
+        subprocess.Popen('explorer '+os.path.abspath(self.save_directory))
 
     @pyqtSlot(int, float)
     def update_dk_graph_data(self, epoch, data):

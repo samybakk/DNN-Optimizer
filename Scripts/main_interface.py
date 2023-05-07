@@ -18,6 +18,7 @@ import datetime
 import shutil
 from Model_list import ZipSelector
 import zipfile
+import torch
 # logging.basicConfig(level=logging.DEBUG, format=' %(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
@@ -86,7 +87,16 @@ class Ui(QMainWindow):
 
         self.View_Database.setModel(self.dirdataset)
         self.View_Database.setRootIndex(self.dirdataset.index('./Datasets/'))
+
+        # self.device = 'cpu'
+        if torch.cuda.is_available():
+            self.device = 'cuda'
+            print('Using GPU')
+        else:
+            self.device = 'cpu'
+            print('Using CPU')
         
+        # self.device = 'cpu'
         self.show()
         
     def Database_browsing(self):
@@ -184,18 +194,18 @@ class Ui(QMainWindow):
             
             
             
-            self.progressWindow(self.current_model_path)
+            self.progressWindow(self.current_model_path,'results/' + save_name)
             
-            dictio = {'console': self.Console, 'model_path': self.current_model_path, 'p': self.Pruning,
-                      'q': self.Quantaziation, 'd': self.Distilled_Knowledge, 'batch_size': 128,
-                      'pr': self.PruningRatioSB.value(),'dataset_path':self.current_dataset_path,
-                      'epochs': self.PruningEpochsSB.value(), 'df': self.DesiredFormatCB.currentText(),
+            dictio = {'console': self.Console, 'model_path': self.current_model_path, 'Pruning': self.Pruning.isChecked(),
+                      'Quantization': self.Quantaziation.isChecked(), 'Knowledge_Distillation': self.Distilled_Knowledge.isChecked(), 'batch_size': 8,
+                      'pruning_ratio': self.PruningRatioSB.value(),'dataset_path':self.current_dataset_path,
+                      'pruning_epochs': self.PruningEpochsSB.value(), 'desired_format': self.DesiredFormatCB.currentText(),
                       'teacher_model_path': self.Teacher_Model_Path.toPlainText(),
-                      'temperature': self.TemperatureSB.value(), 'save_name': save_name,
+                      'KD_temperature': self.TemperatureSB.value(), 'save_name': save_name,
                       'save_unziped': self.SaveUnzipedRB.isChecked(),
                       'convert_tflite': self.ConvertTFLiteRB.isChecked(),
-                      'Compressed': self.CompressedRB.isChecked(), 'Alpha': self.AlphaSB.value(),
-                      'DKepochs': self.DKEpochsSB.value(), 'PWInstance': self.progresswindow,'framework':framework}
+                      'Compressed': self.CompressedRB.isChecked(), 'KD_alpha': self.AlphaSB.value(),
+                      'KD_epochs': self.DKEpochsSB.value(),'device':self.device, 'PWInstance': self.progresswindow,'framework':framework}
             
             
             self.thread = QThread()
@@ -220,8 +230,8 @@ class Ui(QMainWindow):
     def updateConsole(self,string):
         self.Console.appendPlainText(string)
 
-    def progressWindow(self,model_path):
-        self.progresswindow = ProgressWindow(model_path)
+    def progressWindow(self,model_path,save_directory):
+        self.progresswindow = ProgressWindow(model_path,save_directory)
         self.progresswindow.show()
         
 if __name__ == "__main__":
