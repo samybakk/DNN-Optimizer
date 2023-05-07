@@ -1,0 +1,7 @@
+Datasets/*
+Models/Input Models/*
+Models/Output Models/*
+Models/Teacher Models/*
+Models/Temp/*
+results/*
+
