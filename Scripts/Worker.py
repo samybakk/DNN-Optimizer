@@ -1,4 +1,5 @@
 import os
+import sys
 from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
 import zipfile
 from keras.models import load_model as tf_load
@@ -10,15 +11,25 @@ from Quantization import *
 from Knowledge_Distillation import *
 from Model_utils import *
 from logger_utils  import *
+from PyQt5.QtCore import QRunnable, pyqtSignal, pyqtSlot
 
-class Worker(QObject):
+# class WorkerSignals(QObject):
+#     finished = pyqtSignal()
+#     error_occurred = pyqtSignal(str)
+
+class Worker(QRunnable):
     finished = pyqtSignal()
-
+    error_occurred = pyqtSignal(str)
     
+    def __init__(self, Dict,worker_id):
+        super().__init__()
+        self.worker_id = worker_id
+        self.Dict = Dict
+        # self.signals = WorkerSignals()
     
-    @pyqtSlot(dict)
-    def processing(self, Dict):
-    
+    # @pyqtSlot(dict)
+    def run(self):
+        Dict = self.Dict
         Dict['PWInstance'].update_progress_signal.connect(Dict['PWInstance'].update_progress)
         Dict['PWInstance'].undo_progress_signal.connect(Dict['PWInstance'].undo_progress)
         
@@ -105,18 +116,25 @@ class Worker(QObject):
                 
         elif Dict['framework'] == 'torch':
             try :
-                train_loader, val_loader = load_pytorch_dataset(Dict['dataset_path'], batch_size=Dict['batch_size'])
+                train_loader, val_loader = load_pytorch_dataset(Dict['dataset_path'], batch_size=Dict['batch_size'],train_fraction=Dict['train_fraction'],val_fraction = Dict['validation_fraction'],logger = logger)
                 
-            except:
-                Dict['PWInstance'].update_progress_signal.emit('Dataset not found')
-                return
+            except Exception as e:
+                if Dict['dataset_path'].split('/')[-1] != '':
+                    print('No Dataset selected, Continuing with the optimization process without testing the model')
+                    print('WARNING : Some optimization processes might not work correctly without a dataset')
+                else :
+                    Dict['PWInstance'].update_progress_signal.emit('Dataset not found')
+                    print("\n\nError loading the dataset :")
+                    print(str(e)+'\n')
+                    self.signals.error_occurred.emit(str(e))
             
             # Loading The model
             try :
                 model = load_pytorch_model(Dict['model_path'],Dict['device'])
             except Exception as e:
-                print("Error loading the PyTorch model :")
-                print(str(e))
+                print(f"\n\nError loading the PyTorch model at {Dict['model_path']} :")
+                print(str(e)+'\n')
+                self.signals.error_occurred.emit(str(e))
                 
             #Testing intial model inference speed
             if Dict['dataset_path'].split('/')[-1] != '':
@@ -133,7 +151,17 @@ class Worker(QObject):
                 initial_inference_speed = test_inference_speed(model, device=Dict['device'],logger = logger)
                 print(f"Inference speed of the initial model : {initial_inference_speed:.4f} seconds")
                 logger.info(f"Inference speed of the initial model : {initial_inference_speed:.4f} seconds")
-            
+
+            # Testing initial model size
+            model.eval()
+            initial_object_size_mb, initial_gpu_size_mb, initial_disk_size_mb = test_model_size(model, Dict['model_path'], Dict['device'])
+
+            print(f"Initial model GPU memory allocated: {initial_gpu_size_mb:.3f} MB")
+            print(f"Initial model object size: {initial_object_size_mb:.3f} MB")
+            print(f"Initial model disk size: {initial_disk_size_mb:.3f} MB")
+            logger.info(f"Initial model GPU memory allocated: {initial_gpu_size_mb:.3f} MB")
+            logger.info(f"Initial model object size: {initial_object_size_mb:.3f} MB")
+            logger.info(f"Initial model disk size: {initial_disk_size_mb:.3f} MB")
             
             Dict['PWInstance'].undo_progress_signal.emit()
             Dict['PWInstance'].update_progress_signal.emit('Model initialized')
@@ -164,10 +192,11 @@ class Worker(QObject):
                 Dict['PWInstance'].update_progress_signal.emit('Starting Knowledge transfer...')
                 
                 try :
-                    teacher_model = load_pytorch_model(Dict['model_path'],Dict['device'])
+                    teacher_model = load_pytorch_model(Dict['teacher_model_path'],Dict['device'])
                 except Exception as e:
-                    print("Error loading the PyTorch Teacher model :")
-                    print(str(e))
+                    print(f"\n\nError loading the PyTorch Teacher model in {Dict['teacher_model_path']} :")
+                    print(str(e)+"\n")
+                    self.signals.error_occurred.emit(str(e))
                     
                 model = distill_model_pytorch(model, teacher_model,
                                               Dict['KD_temperature'], Dict['KD_alpha'], Dict['KD_epochs'],
@@ -214,9 +243,25 @@ class Worker(QObject):
             Dict['PWInstance'].undo_progress_signal.emit()
             Dict['PWInstance'].update_progress_signal.emit('Model saved')
 
-            Dict['PWInstance'].final_size_signal.emit(str(round(os.stat(saved_model_path).st_size / (1024 ^ 2), 3)))
+            
 
-            self.finished.emit()
-            return model
+            # Testing final model size
+            model.eval()
+            object_size_mb, gpu_size_mb,disk_size_mb = test_model_size(model,saved_model_path, Dict['device'])
+            
+            print(f"Final model GPU memory allocated: {gpu_size_mb:.3f} MB")
+            print(f"Final model object size: {object_size_mb:.3f} MB")
+            print(f"Final model disk size: {disk_size_mb:.3f} MB")
+            logger.info(f"Final model GPU memory allocated: {gpu_size_mb:.3f} MB")
+            logger.info(f"Final model object size: {object_size_mb:.3f} MB")
+            logger.info(f"Final model disk size: {disk_size_mb:.3f} MB")
 
-    
+            Dict['PWInstance'].final_size_signal.emit(disk_size_mb)
+            
+            #Dict['PWInstance'].close()
+            
+            
+            #self.finished.emit()
+            # return model
+        
+        

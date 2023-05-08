@@ -11,7 +11,7 @@ import os
 import sys,logging
 from PyQt5 import QtWidgets, uic
 from PyQt5.QtWidgets import QMainWindow,QApplication,QFileDialog,QTextEdit,QPlainTextEdit,QPushButton,QRadioButton,QComboBox,QSpinBox,QDoubleSpinBox,QTreeView,QFileSystemModel
-from PyQt5.QtCore import  QThread, pyqtSignal,QDir,QSortFilterProxyModel
+from PyQt5.QtCore import  QThread, pyqtSignal,QDir,QSortFilterProxyModel,QThreadPool,Qt
 from ProgressWindow import ProgressWindow
 from Worker import Worker
 import datetime
@@ -19,7 +19,7 @@ import shutil
 from Model_list import ZipSelector
 import zipfile
 import torch
-# logging.basicConfig(level=logging.DEBUG, format=' %(asctime)s - %(name)s - %(levelname)s - %(message)s')
+from Model_utils import *
 
 
 class Ui(QMainWindow):
@@ -87,6 +87,11 @@ class Ui(QMainWindow):
 
         self.View_Database.setModel(self.dirdataset)
         self.View_Database.setRootIndex(self.dirdataset.index('./Datasets/'))
+        
+        self.threadpool = QThreadPool()
+        self.threadpool.setMaxThreadCount(5)
+        self.worker_id_counter = 0
+        self.worker_dict = {}
 
         # self.device = 'cpu'
         if torch.cuda.is_available():
@@ -190,49 +195,65 @@ class Ui(QMainWindow):
             elif self.current_model_path.endswith('.pt'):
                 framework = 'torch'
 
-            
-            
-            
-            
-            self.progressWindow(self.current_model_path,'results/' + save_name)
+            worker_id = self.worker_id_counter
+            self.worker_id_counter += 1
+            progresswindow = self.create_progressWindow(self.current_model_path,'results/' + save_name,worker_id)
             
             dictio = {'console': self.Console, 'model_path': self.current_model_path, 'Pruning': self.Pruning.isChecked(),
                       'Quantization': self.Quantaziation.isChecked(), 'Knowledge_Distillation': self.Distilled_Knowledge.isChecked(), 'batch_size': 8,
                       'pruning_ratio': self.PruningRatioSB.value(),'dataset_path':self.current_dataset_path,
+                      'train_fraction': 1, 'validation_fraction': 1,
+                      # 'train_fraction': self.TrainFractionSB.value(), 'validation_fraction': self.ValidationFractionSB.value(),
                       'pruning_epochs': self.PruningEpochsSB.value(), 'desired_format': self.DesiredFormatCB.currentText(),
                       'teacher_model_path': self.Teacher_Model_Path.toPlainText(),
                       'KD_temperature': self.TemperatureSB.value(), 'save_name': save_name,
                       'save_unziped': self.SaveUnzipedRB.isChecked(),
                       'convert_tflite': self.ConvertTFLiteRB.isChecked(),
                       'Compressed': self.CompressedRB.isChecked(), 'KD_alpha': self.AlphaSB.value(),
-                      'KD_epochs': self.DKEpochsSB.value(),'device':self.device, 'PWInstance': self.progresswindow,'framework':framework}
-            
-            
-            self.thread = QThread()
-            self.worker = Worker()
-            self.worker.moveToThread(self.thread)
+                      'KD_epochs': self.DKEpochsSB.value(),'device':self.device, 'PWInstance': progresswindow,'framework':framework}
 
-            
-            
-            self.worker.finished.connect(self.thread.quit)
-            self.worker.finished.connect(self.worker.deleteLater)
-            self.thread.finished.connect(self.thread.deleteLater)
-            
-            self.thread.start()
-            self.dic.connect(self.worker.processing)
-            self.dic.emit(dictio)
-            
-            # self.Process.setEnabled(False)
-            # self.thread.finished.connect(
-            #     lambda: self.Process.setEnabled(True)
-            # )
+            worker = Worker(dictio,worker_id)
+            self.worker_dict[worker_id] = worker
+            # worker.finished.connect(self.handle_thread_finished, Qt.QueuedConnection)
+            self.threadpool.start(worker)
+
+    def handle_thread_error(self, error_message):
+        # self.sender().thread().quit()  # Close the thread
+        # self.sender().thread().deleteLater()
+        # self.sender().deleteLater()
+        #self.progresswindow.close()
+        print("Error occurred in the thread:", error_message)
+
+    def handle_thread_finished(self):
+        # thread = self.sender().thread()
+        # worker = self.sender()
+    
+        print("Thread finished")
+    
+        # self.threads.remove(thread)
+        # self.workers.remove(worker)
+        #
+        # thread.deleteLater()
+        # worker.deleteLater()
          
     def updateConsole(self,string):
         self.Console.appendPlainText(string)
 
-    def progressWindow(self,model_path,save_directory):
-        self.progresswindow = ProgressWindow(model_path,save_directory)
-        self.progresswindow.show()
+    def create_progressWindow(self,model_path,save_directory,worker_id):
+        model_disk_space = os.stat(model_path).st_size / (1024 * 1024)
+        progresswindow = ProgressWindow(model_disk_space,save_directory,worker_id)
+        progresswindow.windowClosed.connect(self.stop_thread)#(worker_id))
+        progresswindow.show()
+        return progresswindow
+    
+    def stop_thread(self, worker_id):
+        # Get the associated Worker instance
+        # worker = self.worker_dict.pop(worker_id, None)
+        # print(f'worker : {worker}')
+        # if worker:
+        #     # Stop the thread associated with the Worker
+        #     self.threadpool.cancel(worker)
+        pass
         
 if __name__ == "__main__":
     app = QApplication(sys.argv)

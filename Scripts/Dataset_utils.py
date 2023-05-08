@@ -125,7 +125,7 @@ def load_pytorch_cifar10(dataset_path):
     
     return train_dataset, val_dataset
 
-def load_pytorch_dataset(dataset_path, batch_size=8, val_batch_size=16, train_fraction=1):
+def load_pytorch_dataset(dataset_path, batch_size=8, val_batch_size=16, train_fraction=1,val_fraction=1,logger=None):
     
     if dataset_path.split('/')[-1].startswith('cifar-10'):
         train_dataset, val_dataset = load_pytorch_cifar10(dataset_path=dataset_path)
@@ -152,16 +152,22 @@ def load_pytorch_dataset(dataset_path, batch_size=8, val_batch_size=16, train_fr
     
     
     # Create a subset of the training dataset with a fraction of the samples
-    num_samples = len(train_dataset)
-    subset_size = int(num_samples * train_fraction)
+    train_num_samples = len(train_dataset)
+    train_subset_size = int(train_num_samples * train_fraction)
 
-    subset_indices = torch.randperm(num_samples)[:subset_size]
-    subset_sampler = SubsetRandomSampler(subset_indices)
+    train_subset_indices = torch.randperm(train_num_samples)[:train_subset_size]
+    train_subset_sampler = SubsetRandomSampler(train_subset_indices)
+
+    # Create a subset of the validation dataset with a fraction of the samples
+    val_num_samples = len(val_dataset)
+    val_subset_size = int(val_num_samples * val_fraction)
     
+    val_subset_indices = torch.randperm(val_num_samples)[:val_subset_size]
+    val_subset_sampler = SubsetRandomSampler(val_subset_indices)
     
     # Create data loaders for the dataset
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False,sampler=subset_sampler)
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=val_batch_size, shuffle=False)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False,sampler=train_subset_sampler)
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=val_batch_size, shuffle=False,sampler=val_subset_sampler)
     
     return train_loader, val_loader
 

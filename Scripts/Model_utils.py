@@ -1,8 +1,29 @@
+import os
+import sys
 import tensorflow as tf
 import keras
 import torch
 from torch import nn
 from torchvision.models import resnet50, ResNet50_Weights,vgg16, VGG16_Weights
+
+
+def test_model_size(model,saved_model_path, device):
+    gpu_size_mb = 0
+    if device == 'cuda':
+        # Get the GPU memory allocated by the model in bytes
+        torch.cuda.synchronize()
+        gpu_size_mb = torch.cuda.memory_allocated(device) / (1024 * 1024)
+    
+    # Get the size of the model object in bytes
+    model_size = sys.getsizeof(model)
+    parameter_size = sum(p.numel() * p.element_size() for p in model.parameters())
+    object_size_mb = (model_size + parameter_size) / (1024 * 1024)
+    
+    #Get the size of the model on disk
+    disk_size_mb = os.stat(saved_model_path).st_size / (1024 * 1024)
+    
+    return object_size_mb, gpu_size_mb,disk_size_mb
+
 
 def load_pytorch_model(model_path, device):
     try:

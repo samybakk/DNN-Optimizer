@@ -10,12 +10,14 @@ class ProgressWindow(QMainWindow):
     
     on_pruning_epoch_end_signal = pyqtSignal(int, float)
     on_dk_epoch_end_signal = pyqtSignal(int, float)
-    final_size_signal = pyqtSignal(str)
+    final_size_signal = pyqtSignal(float)
     
     update_progress_signal = pyqtSignal(str)
     undo_progress_signal = pyqtSignal()
+
+    windowClosed = pyqtSignal(int)
     
-    def __init__(self,model_path,save_directory):
+    def __init__(self,model_disk_space,save_directory,worker_id=None):
         
         super().__init__()
         self.setWindowTitle("Progress Monitor")
@@ -32,7 +34,7 @@ class ProgressWindow(QMainWindow):
         self.pruningGraph = self.findChild(PlotWidget, 'pruningGraph')
         
         self.original_size = self.findChild(QLabel, 'original_size')
-        self.original_size.setText("Original Size: "+str(round(os.stat(model_path).st_size/(1024^2),3))+" KB")
+        self.original_size.setText(f"Original Size: {model_disk_space:.3f}  MB")
         
         self.CompleteLabel = self.findChild(QLabel, 'CompleteLabel')
         self.CompleteLabel.setHidden(True)
@@ -56,9 +58,15 @@ class ProgressWindow(QMainWindow):
         self.data_line2 = self.pruningGraph.plot(self.graph2_x, self.graph2_y, pen=pen)
         
         self.save_directory = save_directory
+        
+        self.worker_id = worker_id
     
     def displayDirectory(self):
         subprocess.Popen('explorer '+os.path.abspath(self.save_directory))
+
+    def closeEvent(self, event):
+        self.windowClosed.emit(self.worker_id)
+        super(ProgressWindow, self).closeEvent(event)
 
     @pyqtSlot(int, float)
     def update_dk_graph_data(self, epoch, data):
@@ -85,10 +93,10 @@ class ProgressWindow(QMainWindow):
 
         self.data_line2.setData(self.graph2_x, self.graph2_y)
         
-    @pyqtSlot(str)
+    @pyqtSlot(float)
     def update_final_size(self, size):
         self.CompleteLabel.setHidden(False)
-        self.final_size.setText("Final Size: "+size+" KB")
+        self.final_size.setText(f'Final Size : {size:.3f} MB')
 
     
     @pyqtSlot(str)
