@@ -11,70 +11,107 @@ import torchvision.transforms as transforms
 import numpy as np
 import torch
 import time
+from Model_utils import *
 import logging
+# from yolov7.utils.datasets import *
+# from yolov7.test import test
+from yolov5.val import run
+from yolov5.utils.dataloaders import *
 
 
-def test_inference_speed(model, device, img_size=(224, 224, 3),logger=None):
-    # model_parameters = [x for x in model.parameters()]
-    # Generate an image of random noise
-    img = np.random.randint(0, 256, size=img_size, dtype=np.uint8)
-    
-    # Convert the image to a PyTorch tensor
-    img = torch.from_numpy(img).permute(2, 0, 1).float().unsqueeze(0)
-    # img = torch.from_numpy(img).permute(2, 0, 1).float().div(255.0).unsqueeze(0)
-    
-    # Move the image to the same device as the model
-    img = img.to(device=device)
-    
+def test_inference_speed(model, device, input_size=(1,3,224, 224),num_samples=100,num_warmups=10,logger=None):
+    model.to(device)
     model.eval()
-    # if device == 'cuda':
-    # img = img.half()
-    # model.half()
-    # else:
-    #     model.float()
-
-    # Initialize the model
-    _ = model(img)
     
-    # Measure the inference time
-    start_time = time.time()
+    x = torch.rand(size=input_size).to(device)
+    
     with torch.no_grad():
-        for _ in range(100):
-            _ = model(img)  # for resnet50
-            # _ = model(img).half()  # for vgg16
-    end_time = time.time()
-    model.train()
+        for _ in range(num_warmups):
+            _ = model(x)
+    torch.cuda.synchronize()
     
-    # Calculate the inference speed
-    inference_speed = (end_time - start_time) / 100
-    
-    return inference_speed
-
-
-def test_inference_speed_and_accuracy(model, val_loader, device,logger):
-    # Initialize the model
-    
-    # Measure the inference time
-    model = model.float().eval()
-    total_correct = 0
-    total_samples = 0
     with torch.no_grad():
         start_time = time.time()
-        for inputs, labels in val_loader:
-            inputs, labels = inputs.to(device), labels.to(device)
-            outputs = model(inputs)
-            _, predicted = torch.max(outputs, dim=1)
-            total_correct += (predicted == labels).sum().item()
-            total_samples += inputs.size(0)
+        for _ in range(num_samples):
+            _ = model(x)
+            torch.cuda.synchronize()
         end_time = time.time()
+    elapsed_time = end_time - start_time
+    elapsed_time_avg = elapsed_time / num_samples
     
-    model.train()
+    return elapsed_time_avg
+
+
+def test_inference_speed_and_accuracy(model, val_loader, device,Dict,logger,is_yolo):
+    if isinstance(model, str):
+        model_path = model
     
-    # Calculate the inference speed and accuracy
-    inference_speed = (end_time - start_time) / len(val_loader)
-    val_accuracy = total_correct / total_samples
+    if is_yolo:
+        # test(Dict['dataset_path']+'/data.yaml',Dict['model_path'],8, 640, 0.25, 0.45, save_json=False, plots=False,
+        #      v5_metric=False)
+        if device == 'cuda':
+            device = '0'
+        val_accuracy, val_accuracy_per_class, inference_speed = run(Dict['dataset_path'] + '/data.yaml', model_path,
+                                                    batch_size=8, imgsz=640, conf_thres=0.001, iou_thres=0.6,
+                                                    device=device, workers=2, save_json=False, plots=False)
+    
+        print(f'val_accuracy : {val_accuracy}')
+        print(f'val_accuracy_per_class : {val_accuracy_per_class}')
+        print(f'inference_speed : {inference_speed}')
+    else:
+    
+        # Measure the inference time
+        model = model.to(device=device)
+        model = model.eval()
+        total_correct = 0
+        total_samples = 0
+        with torch.no_grad():
+            
+            start_time = time.time()
+            for inputs, labels in val_loader:
+                inputs, labels = inputs.to(device), labels.to(device)
+                outputs = model(inputs)
+                _, predicted = torch.max(outputs, dim=1)
+                total_correct += (predicted == labels).sum().item()
+                total_samples += inputs.size(0)
+            model.train()
+    
+            # Calculate the inference speed and accuracy
+            end_time = time.time()
+            inference_speed = (end_time - start_time) / (len(val_loader)*8)
+            val_accuracy = total_correct / total_samples
+            
+        
+    
     
     return inference_speed, val_accuracy
+
+
+# def test_inference_speed_memory_and_accuracy(model, val_loader, device, logger):
+#     # Initialize the model
+#
+#     # Measure the inference time
+#     model = model.float().eval()
+#     total_correct = 0
+#     total_samples = 0
+#     with torch.no_grad():
+#         start_time = time.time()
+#         for inputs, labels in val_loader:
+#             inputs, labels = inputs.to(device), labels.to(device)
+#             outputs = model(inputs)
+#             _, predicted = torch.max(outputs, dim=1)
+#             total_correct += (predicted == labels).sum().item()
+#             total_samples += inputs.size(0)
+#         end_time = time.time()
+#
+#     model.train()
+#
+#     # Calculate the inference speed and accuracy
+#     inference_speed = (end_time - start_time) / len(val_loader)
+#     val_accuracy = total_correct / total_samples
+#
+#     return inference_speed, val_accuracy
+
 
 def load_pytorch_cifar10(dataset_path):
     import os
@@ -147,8 +184,35 @@ def load_pytorch_dataset(dataset_path, batch_size=8, val_batch_size=16, train_fr
         ])
         
         # Load the custom dataset
-        train_dataset = torchvision.datasets.ImageFolder(root=dataset_path+'/train', transform=train_transforms)
-        val_dataset = torchvision.datasets.ImageFolder(root=dataset_path+'/val', transform=val_transforms)
+        try :
+            train_dataset = torchvision.datasets.ImageFolder(root=dataset_path+'/train', transform=train_transforms)
+            val_dataset = torchvision.datasets.ImageFolder(root=dataset_path+'/val', transform=val_transforms)
+        except :
+            with open(dataset_path+'/data.yaml') as f:
+                data_dict = yaml.load(f, Loader=yaml.SafeLoader)
+            train_path = data_dict['train'][2:]
+            val_path = data_dict['val'][2:]
+            imgsz=640
+            # gs = max(int(model.stride.max()), 32)  # grid size (max stride)
+            stride = 32
+            single_cls = False
+            train_loader = create_dataloader(train_path,
+                                           imgsz,
+                                           batch_size,
+                                           stride,
+                                           single_cls,
+                                           workers=2,
+                                           prefix=f'train: ')[0]
+            val_loader = create_dataloader(val_path,
+                                             imgsz,
+                                             batch_size,
+                                             stride,
+                                             single_cls,
+                                             workers=2,
+                                             prefix=f'train: ')[0]
+            print('train_loader',train_loader)
+            print('val_loader',val_loader)
+            return train_loader, val_loader
     
     
     # Create a subset of the training dataset with a fraction of the samples

@@ -20,7 +20,8 @@ from Model_list import ZipSelector
 import zipfile
 import torch
 from Model_utils import *
-
+sys.path.insert(0, '../yolov5')
+# sys.path.insert(0, './yolov7')
 
 class Ui(QMainWindow):
     
@@ -198,24 +199,59 @@ class Ui(QMainWindow):
             worker_id = self.worker_id_counter
             self.worker_id_counter += 1
             progresswindow = self.create_progressWindow(self.current_model_path,'results/' + save_name,worker_id)
-            
-            dictio = {'console': self.Console, 'model_path': self.current_model_path, 'Pruning': self.Pruning.isChecked(),
-                      'Quantization': self.Quantaziation.isChecked(), 'Knowledge_Distillation': self.Distilled_Knowledge.isChecked(), 'batch_size': 8,
-                      'pruning_ratio': self.PruningRatioSB.value(),'dataset_path':self.current_dataset_path,
-                      'train_fraction': 1, 'validation_fraction': 1,
+
+            dictio = {'console': self.Console, 'model_path': self.current_model_path,
+                      'Pruning': self.Pruning.isChecked(),
+                      'Quantization': self.Quantaziation.isChecked(),
+                      'Knowledge_Distillation': self.Distilled_Knowledge.isChecked(), 'batch_size': 2,
+                      'pruning_ratio': self.PruningRatioSB.value(), 'dataset_path': self.current_dataset_path,
+                      'train_fraction': 0.01, 'validation_fraction': 0.1,
                       # 'train_fraction': self.TrainFractionSB.value(), 'validation_fraction': self.ValidationFractionSB.value(),
-                      'pruning_epochs': self.PruningEpochsSB.value(), 'desired_format': self.DesiredFormatCB.currentText(),
+                      'pruning_epochs': self.PruningEpochsSB.value(),
+                      'desired_format': self.DesiredFormatCB.currentText(),
                       'teacher_model_path': self.Teacher_Model_Path.toPlainText(),
                       'KD_temperature': self.TemperatureSB.value(), 'save_name': save_name,
                       'save_unziped': self.SaveUnzipedRB.isChecked(),
                       'convert_tflite': self.ConvertTFLiteRB.isChecked(),
                       'Compressed': self.CompressedRB.isChecked(), 'KD_alpha': self.AlphaSB.value(),
-                      'KD_epochs': self.DKEpochsSB.value(),'device':self.device, 'PWInstance': progresswindow,'framework':framework}
+                      'KD_epochs': self.DKEpochsSB.value(), 'device': self.device, 'PWInstance': progresswindow,
+                      'framework': framework}
 
-            worker = Worker(dictio,worker_id)
+            worker = Worker(dictio, worker_id)
             self.worker_dict[worker_id] = worker
             # worker.finished.connect(self.handle_thread_finished, Qt.QueuedConnection)
             self.threadpool.start(worker)
+            
+            # list_dictio = []
+            # for pr in range(6,9,1) :
+            #     for kdt in range(6,10,1) :
+            #         dictio = {'console': self.Console, 'model_path': self.current_model_path, 'Pruning': self.Pruning.isChecked(),
+            #               'Quantization': self.Quantaziation.isChecked(), 'Knowledge_Distillation': self.Distilled_Knowledge.isChecked(), 'batch_size': 8,
+            #               'pruning_ratio': pr/10,'dataset_path':self.current_dataset_path,
+            #               'train_fraction': 1, 'validation_fraction': 1,
+            #               # 'train_fraction': self.TrainFractionSB.value(), 'validation_fraction': self.ValidationFractionSB.value(),
+            #               'pruning_epochs': int(pr/2), 'desired_format': self.DesiredFormatCB.currentText(),
+            #               'teacher_model_path': self.Teacher_Model_Path.toPlainText(),
+            #               'KD_temperature': kdt, 'save_name': f'Resnet50-pruningepochs-{int(pr/2)}-pruningratio-{pr/10}-kdtemp-{kdt}-kdalpha-{0.7}-kdepochs-{int(kdt/2)}',
+            #               'save_unziped': self.SaveUnzipedRB.isChecked(),
+            #               'convert_tflite': self.ConvertTFLiteRB.isChecked(),
+            #               'Compressed': self.CompressedRB.isChecked(), 'KD_alpha': 0.7,
+            #               'KD_epochs': int(kdt/2),'device':self.device, 'PWInstance': progresswindow,'framework':framework}
+            #
+            #         list_dictio.append(dictio)
+            # finished = False
+            # index = 0
+            # while finished == False :
+            #
+            #     if self.threadpool.activeThreadCount() == 0 :
+            #         print('\n\nNew Process | index : ',index)
+            #         worker = Worker(list_dictio[index],index)
+            #         self.worker_dict[index] = worker
+            #         worker.signals.finished.connect(self.handle_thread_finished, Qt.QueuedConnection)
+            #         self.threadpool.start(worker)
+            #         index += 1
+            #     if index == len(list_dictio) :
+            #         finished = True
 
     def handle_thread_error(self, error_message):
         # self.sender().thread().quit()  # Close the thread
@@ -224,11 +260,12 @@ class Ui(QMainWindow):
         #self.progresswindow.close()
         print("Error occurred in the thread:", error_message)
 
-    def handle_thread_finished(self):
+    def handle_thread_finished(self,progresswindow):
         # thread = self.sender().thread()
         # worker = self.sender()
     
         print("Thread finished")
+        progresswindow.close()
     
         # self.threads.remove(thread)
         # self.workers.remove(worker)

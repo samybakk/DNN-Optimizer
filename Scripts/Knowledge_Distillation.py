@@ -77,8 +77,8 @@ def distill_model_pytorch(student_model, teacher_model, temperature, alpha, KD_e
                 total_correct += (predicted == labels).sum().item()
                 total_samples += inputs.size(0)
         val_accuracy = total_correct / total_samples
-        print(f'Epoch {epoch + 1}, Validation Accuracy: {val_accuracy * 100:.2f} %')
-        logger.info(f'Epoch {epoch + 1}, Validation Accuracy: {val_accuracy * 100:.2f} %')
+        print(f'KD Epoch {epoch + 1}, Validation Accuracy: {val_accuracy * 100:.2f} %')
+        logger.info(f'KD Epoch {epoch + 1}, Validation Accuracy: {val_accuracy * 100:.2f} %')
         plotdk.on_epoch_end(epoch + 1, 100 * val_accuracy)
         student_model.train()
         

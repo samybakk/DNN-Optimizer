@@ -1,7 +1,7 @@
 import logging
 
 def setup_logger(log_dir):
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger(f'{__name__}_{log_dir}')
     logger.setLevel(logging.INFO)
     
     # Create a file handler
