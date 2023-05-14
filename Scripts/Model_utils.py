@@ -5,12 +5,6 @@ import keras
 import torch
 from torch import nn
 from torchvision.models import resnet50, ResNet50_Weights,vgg16, VGG16_Weights
-# sys.path.insert(0, './yolov7')
-# from yolov7.models.experimental import attempt_load
-# from yolov7.utils.general import check_img_size, non_max_suppression, scale_coords, xyxy2xywh
-# from yolov7.utils.torch_utils import select_device,intersect_dicts
-# from yolov7.utils.datasets import letterbox
-# from yolov7.models.yolo import Model
 from yolov5.models.common import DetectMultiBackend
 from yolov5.models.yolo import Model
 from yolov5.utils.general import intersect_dicts

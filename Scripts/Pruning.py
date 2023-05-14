@@ -5,15 +5,12 @@ from Dataset_utils import *
 import tempfile
 import tensorflow as tf
 import tensorflow_model_optimization as tfmot
-
-
-
-
-
-# a funciton that takes a tensorflow model and returns a pruned version of it using pruning_ratio as the pruning ratio without re-training the model and without data
 from yolov5.utils.loss import ComputeLoss
 
 
+
+
+# a function that takes a tensorflow model and returns a pruned version of it using pruning_ratio as the pruning ratio without re-training the model and without data
 def basic_prune_model_tensorflow(model, pruning_ratio,logger):
     # Get weights of the model
     weights = model.get_weights()
@@ -60,8 +57,7 @@ def prune_model_tensorflow(model, pruning_ratio,PEpochs,batch_size,convert_tflit
 
     callbacks = [
         tfmot.sparsity.keras.UpdatePruningStep(),
-        tfmot.sparsity.keras.PruningSummaries(log_dir=logdir),
-        TfPlotPruning(PWInstance)]
+        tfmot.sparsity.keras.PruningSummaries(log_dir=logdir),]
 
     model_for_pruning.fit(train_data, train_labels,batch_size=batch_size, epochs=PEpochs, validation_split=0.1,
     callbacks=callbacks)

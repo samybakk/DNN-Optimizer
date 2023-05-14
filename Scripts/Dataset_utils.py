@@ -4,7 +4,6 @@ from keras.datasets import mnist
 from keras.preprocessing.image import ImageDataGenerator
 from torch.utils.data import SubsetRandomSampler
 import torchvision
-import cv2
 from utilities import *
 import torchvision.datasets as dsets
 import torchvision.transforms as transforms
@@ -12,9 +11,6 @@ import numpy as np
 import torch
 import time
 from Model_utils import *
-import logging
-# from yolov7.utils.datasets import *
-# from yolov7.test import test
 from yolov5.val import run
 from yolov5.utils.dataloaders import *
 
@@ -47,8 +43,6 @@ def test_inference_speed_and_accuracy(model, val_loader, device,Dict,logger,is_y
         model_path = model
     
     if is_yolo:
-        # test(Dict['dataset_path']+'/data.yaml',Dict['model_path'],8, 640, 0.25, 0.45, save_json=False, plots=False,
-        #      v5_metric=False)
         if device == 'cuda':
             device = '0'
         val_accuracy, val_accuracy_per_class, inference_speed = run(Dict['dataset_path'] + '/data.yaml', model_path,
@@ -85,32 +79,6 @@ def test_inference_speed_and_accuracy(model, val_loader, device,Dict,logger,is_y
     
     
     return inference_speed, val_accuracy
-
-
-# def test_inference_speed_memory_and_accuracy(model, val_loader, device, logger):
-#     # Initialize the model
-#
-#     # Measure the inference time
-#     model = model.float().eval()
-#     total_correct = 0
-#     total_samples = 0
-#     with torch.no_grad():
-#         start_time = time.time()
-#         for inputs, labels in val_loader:
-#             inputs, labels = inputs.to(device), labels.to(device)
-#             outputs = model(inputs)
-#             _, predicted = torch.max(outputs, dim=1)
-#             total_correct += (predicted == labels).sum().item()
-#             total_samples += inputs.size(0)
-#         end_time = time.time()
-#
-#     model.train()
-#
-#     # Calculate the inference speed and accuracy
-#     inference_speed = (end_time - start_time) / len(val_loader)
-#     val_accuracy = total_correct / total_samples
-#
-#     return inference_speed, val_accuracy
 
 
 def load_pytorch_cifar10(dataset_path):
@@ -190,8 +158,8 @@ def load_pytorch_dataset(dataset_path, batch_size=8, val_batch_size=16, train_fr
         except :
             with open(dataset_path+'/data.yaml') as f:
                 data_dict = yaml.load(f, Loader=yaml.SafeLoader)
-            train_path = data_dict['train'][2:]
-            val_path = data_dict['val'][2:]
+            train_path = data_dict['train']
+            val_path = data_dict['val']
             imgsz=640
             # gs = max(int(model.stride.max()), 32)  # grid size (max stride)
             stride = 32
@@ -355,39 +323,3 @@ def torch_load_mnist(batch_size=128):
                                               shuffle=False)
     
     return train_loader, test_loader
-
-
-class TfPlotPruning(keras.callbacks.Callback):
-    def __init__(self, PW):
-        self.PW = PW
-        self.PW.on_pruning_epoch_end_signal.connect(self.PW.update_pruning_graph_data)
-    
-    def on_epoch_end(self, epoch, logs={}):
-        self.PW.on_pruning_epoch_end_signal.emit(epoch, logs['val_accuracy'])
-
-
-class TfPlotDK(keras.callbacks.Callback):
-    def __init__(self, PW):
-        self.PW = PW
-        self.PW.on_dk_epoch_end_signal.connect(self.PW.update_dk_graph_data)
-    
-    def on_epoch_end(self, epoch, logs={}):
-        self.PW.on_dk_epoch_end_signal.emit(epoch, logs['sparse_categorical_accuracy'])
-
-
-class PTPlotPruning():
-    def __init__(self, PW):
-        self.PW = PW
-        self.PW.on_dk_epoch_end_signal.connect(self.PW.update_pruning_graph_data)
-    
-    def on_epoch_end(self, epoch, loss):
-        self.PW.on_dk_epoch_end_signal.emit(epoch, loss.item())
-
-
-class PTPlotDK():
-    def __init__(self, PW):
-        self.PW = PW
-        self.PW.on_dk_epoch_end_signal.connect(self.PW.update_dk_graph_data)
-    
-    def on_epoch_end(self, epoch, loss):
-        self.PW.on_dk_epoch_end_signal.emit(epoch, loss)

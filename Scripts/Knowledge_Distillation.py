@@ -16,9 +16,8 @@ def distill_model_tensorflow(model, teacher_model, dataset_path, batch_size, tem
         alpha=alpha,
         temperature=temperature)
     
-    callbacks = [TfPlotDK(PWInstance)]
     
-    distiller.fit(train_data, train_labels, epochs=epochs, callbacks=callbacks)
+    distiller.fit(train_data, train_labels, epochs=epochs)
     # distiller.fit(train_data, epochs=epochs, callbacks=callbacks)
     
     print('Evaluating the distilled model')
@@ -33,7 +32,6 @@ def distill_model_pytorch(student_model, teacher_model, temperature, alpha, KD_e
 
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(student_model.parameters(), lr=0.001, momentum=0.9)
-    plotdk = PTPlotDK(PWInstance)
     for epoch in range(KD_epochs):
         loss_sum = 0.0
         for enum, (data, target) in enumerate(train_loader):
@@ -79,7 +77,6 @@ def distill_model_pytorch(student_model, teacher_model, temperature, alpha, KD_e
         val_accuracy = total_correct / total_samples
         print(f'KD Epoch {epoch + 1}, Validation Accuracy: {val_accuracy * 100:.2f} %')
         logger.info(f'KD Epoch {epoch + 1}, Validation Accuracy: {val_accuracy * 100:.2f} %')
-        plotdk.on_epoch_end(epoch + 1, 100 * val_accuracy)
         student_model.train()
         
     return student_model
