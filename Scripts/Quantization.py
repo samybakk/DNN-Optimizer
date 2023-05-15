@@ -52,25 +52,27 @@ def quantize_model_pytorch(model, desired_format, device,logger):
     else:
         desired_format = torch.float32
     
-    # if device == 'cpu':
-    #     torch_quant_model = quantization.quantize_dynamic(model, {nn.Linear}, dtype=desired_format)
-    #
-    # else:
+    if device == 'cpu' or True:
+        torch_quant_model = quantization.quantize_dynamic(model, {nn.Linear, nn.Conv2d}, dtype=desired_format)
+        torch_quant_model = QuantizedModel(torch_quant_model).to(device)
+    else:
     
-    # Create a quantized model
-    # model = QuantizedModel(model)
-    torch_quant_model = torchvision.models.quantization.resnet50(quantize=True)
-    # model.eval()
-    #
-    # # Define the quantization configuration
-    # quantization_scheme = 'x86' # only int8 for now
-    # qconfig = torch.quantization.get_default_qconfig(quantization_scheme)
-    # model.qconfig = qconfig
-    #
-    # # Prepare and convert the model for quantization
-    # torch.quantization.prepare(model, inplace=False)
-    # torch.quantization.convert(model)
-    # torch_quant_model = model.to(device)
+        # Create a quantized model
+        model = QuantizedModel(model.to(device))
+        
+        model.eval()
+    
+        # Define the quantization configuration
+        quantization_scheme = 'x86' # only int8 for now
+        qconfig = torch.quantization.get_default_qconfig(quantization_scheme)
+        model.qconfig = qconfig
+    
+        # Prepare and convert the model for quantization
+        torch.quantization.prepare(model, inplace=True)
+        torch.quantization.convert(model, inplace=True)
+        torch_quant_model = model.to(device)
+    
+        # torch_quant_model = torchvision.models.quantization.resnet50(quantize=True).to(device)
 
         
     return torch_quant_model

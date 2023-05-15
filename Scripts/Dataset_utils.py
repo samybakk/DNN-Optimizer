@@ -132,6 +132,7 @@ def load_pytorch_cifar10(dataset_path):
 
 def load_pytorch_dataset(dataset_path, batch_size=8, val_batch_size=16, train_fraction=1,val_fraction=1,logger=None):
     
+    print('Loading dataset...')
     if dataset_path.split('/')[-1].startswith('cifar-10'):
         train_dataset, val_dataset = load_pytorch_cifar10(dataset_path=dataset_path)
     else :

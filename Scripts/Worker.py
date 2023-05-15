@@ -19,7 +19,21 @@ def worker(Dict):
     
     # Create a log directory if it doesn't exist
     log_dir = 'results/' + Dict['save_name']
-    os.makedirs(log_dir, exist_ok=True)
+
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir, exist_ok=False)
+
+    else :
+        counter = 1
+        while True:
+            new_dir = f"{log_dir}_{counter}"
+        
+            if not os.path.exists(new_dir):
+                os.makedirs(new_dir,exist_ok=False)
+                break
+        
+            counter += 1
+        log_dir = new_dir
 
     # Create a logger
     logger = setup_logger(log_dir)
@@ -27,8 +41,8 @@ def worker(Dict):
         if isinstance(value, str) or isinstance(value, int) or isinstance(value, float) or isinstance(value, bool):
             logger.info(f'{key} : {value}')
 
-    yolo = 'yolo' in Dict['model_path'].split('/')[-1]
-    dataset = Dict['dataset_path'].split('/')[-1] != ''
+    yolo = 'yolo' in Dict['model_path'].split(os.sep)[-1]
+    dataset = Dict['dataset_path'].split(os.sep)[-1] != ''
 
 
     if Dict['framework'] == 'tf':
@@ -89,7 +103,8 @@ def worker(Dict):
                     content = file.read()
 
                 # Get the directory path of the .yaml file
-                current_dir = os.path.dirname(__file__).split('/')[:-1]  # Get the current directory of the script
+                current_dir = os.path.dirname(__file__).split('\\')[:-1] # Get the current directory of the script
+                current_dir = os.sep.join(current_dir)
                 print('current_dir : '+current_dir)
 
                 absolute_path = os.path.join(current_dir,yaml_file_path)  # Get the absolute path
@@ -98,16 +113,20 @@ def worker(Dict):
                 print('yaml_dir : '+yaml_dir)
 
                 # Define the new paths relative to the .yaml file directory
-                new_train_path = yaml_dir + r'/train/images'
-                new_val_path = yaml_dir + r'/valid/images'
-                new_test_path = yaml_dir + r'/test/images'
+                new_train_path = os.path.join(yaml_dir , 'train','images')
+                new_val_path = os.path.join(yaml_dir , 'valid','images')
+                new_test_path = os.path.join(yaml_dir , 'test','images')
                 
+                print('new_train_path : '+new_train_path)
+                print('new_val_path : '+new_val_path)
+                print('new_test_path : '+new_test_path)
                 # Modify the paths relative to the .yaml file directory
-                content = re.sub(r'train: .+', f'train: {new_train_path}', content)
-                content = re.sub(r'val: .+', f'val: {new_val_path}', content)
-                content = re.sub(r'test: .+', f'test: {new_test_path}', content)
+                content = re.sub(r'train: .+', fr'train: {re.escape(new_train_path)}', content)
+                content = re.sub(r'val: .+', fr'val: {re.escape(new_val_path)}', content)
+                content = re.sub(r'test: .+', fr'test: {re.escape(new_test_path)}', content)
                 
                 # Save the modified content back to the .yaml file
+                print('saving the modified content back to the .yaml file')
                 with open(yaml_file_path, 'w') as file:
                     file.write(content)
             
@@ -117,7 +136,7 @@ def worker(Dict):
                                                                 val_fraction=Dict['validation_fraction'],
                                                                 logger=logger)
         except Exception as e:
-            if Dict['dataset_path'].split('/')[-1] == '':
+            if  not dataset:
                 print('No Dataset selected, Continuing with the optimization process without testing the model')
                 print('WARNING : Some optimization processes might not work correctly without a dataset')
             else :
@@ -144,7 +163,7 @@ def worker(Dict):
                                                                                                   is_yolo=yolo)
                 logger.info(f"Speed of the initial model : {initial_inference_speed[0]}ms pre-process, {initial_inference_speed[1]}ms inference, {initial_inference_speed[2]}ms NMS per image ")
                 logger.info(f'Accuracy of the initial model | Precision : {100 * initial_val_accuracy[0]:.2f} % | Recall : {100 * initial_val_accuracy[1]:.2f} % | mAP50 : {100 * initial_val_accuracy[2]:.2f} % | mAP50-95 : {100 * initial_val_accuracy[3]:.2f} %')
-                # model = load_pytorch_model(Dict['model_path'], Dict['device'])
+                
             else :
                 initial_inference_speed, initial_val_accuracy = test_inference_speed_and_accuracy(model, val_loader,
                                                                                                   device=Dict[
@@ -219,7 +238,7 @@ def worker(Dict):
                                                  weight_decay=0.0005)
                 ema = ModelEMA(model)
                 
-                saved_model_path = log_dir + '/' + Dict['save_name'] + '.pt'
+                saved_model_path = log_dir + os.sep + Dict['save_name'] + '.pt'
                 ckpt = {
                     'epoch': 0,
                     'best_fitness': 0,
@@ -257,26 +276,26 @@ def worker(Dict):
                 print(f'Accuracy of the final model : {100 * final_val_accuracy:.2f} %')
                 logger.info(f'\nInference speed of the final model : {final_inference_speed:.4f} seconds')
                 logger.info(f'Accuracy of the final model : {100 * final_val_accuracy:.2f} %')
-                saved_model_path = log_dir + '/' + Dict['save_name'] + '.pt'
+                saved_model_path = log_dir + os.sep + Dict['save_name'] + '.pt'
                 torch.save({'state_dict': model.state_dict()}, saved_model_path)
         else:
             # Testing final model inference speed
             final_inference_speed= test_inference_speed(model,device=Dict['device'],logger = logger)
             print(f"Inference speed of the final model : {final_inference_speed:.4f} seconds")
             logger.info(f'\nInference speed of the final model : {final_inference_speed:.4f} seconds')
-            saved_model_path = log_dir + '/' + Dict['save_name'] + '.pt'
+            saved_model_path = log_dir + os.sep + Dict['save_name'] + '.pt'
             torch.save({'state_dict': model.state_dict()}, saved_model_path)
         
         
 
         if Dict['Compressed']:
             # Open a gzip file for writing
-            with zipfile.ZipFile( log_dir + '/' + Dict['save_name'] + '.zip', 'w', compression=zipfile.ZIP_DEFLATED) as f:
+            with zipfile.ZipFile( log_dir + os.sep + Dict['save_name'] + '.zip', 'w', compression=zipfile.ZIP_DEFLATED) as f:
                 # Save the model to the file
                 f.write(saved_model_path, arcname=Dict['save_name'] + '.pt')
             if not Dict['save_unziped']:
                 os.remove(saved_model_path)
-            saved_model_path =  log_dir + '/' + Dict['save_name'] + '.zip'
+            saved_model_path =  log_dir + os.sep + Dict['save_name'] + '.zip'
      
 
         # Testing final model size

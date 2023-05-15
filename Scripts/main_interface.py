@@ -1,7 +1,9 @@
 import argparse
 from Model_utils import *
-sys.path.insert(0, '../yolov5')
 from Worker import worker
+
+sys.path.insert(0, '../yolov5')
+
 
 """
 Run this script to run the model optimization pipeline without interface.
@@ -64,6 +66,7 @@ def arg_parser():
     return opt
     
 def run(opt):
+    
     dictio = {'model_path': opt.current_model_path,
               'Pruning': opt.Pruning,
               'Quantization': opt.Quantization,

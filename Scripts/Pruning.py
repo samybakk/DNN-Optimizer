@@ -134,7 +134,7 @@ def basic_prune_finetune_model_pytorch(model, pruning_ratio, pruning_epochs, dev
     return model
 
 
-def prune_dynamic_model_pytorch(model, pruning_ratio, pruning_epochs, device, train_loader, val_loader,logger,is_yolo):
+def prune_dynamic_model_pytorch(model, pruning_ratio, pruning_epochs, device, train_loader, val_loader,logger,is_yolo,prune_conv,prune_linear= False):
     logger.info(f'\n\nPruning dynamic model\n')
     normal_optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
     criterion = torch.nn.CrossEntropyLoss()
@@ -142,10 +142,6 @@ def prune_dynamic_model_pytorch(model, pruning_ratio, pruning_epochs, device, tr
     batch_size = 8  # Batch size for training
     img_size = 640  # Input image size
     nc = 52  # Number of classes
-    # yolo_hyp = {'giou': 3.54, 'cls': 1.0, 'cls_pw': 0.5, 'obj': 64.3, 'obj_pw': 1.0, 'iou_t': 0.225, 'lr0': 0.01,
-    #        'lrf': 0.0005,
-    #        'momentum': 0.937, 'weight_decay': 0.0005, 'fl_gamma': 0.0, 'hsv_h': 0.0138, 'hsv_s': 0.664,
-    #        'hsv_v': 0.464}
     hyp_path = 'yolov5/data/hyps/hyp.scratch-low.yaml'
     with open(hyp_path ) as f:
         yolo_hyp = yaml.load(f, Loader=yaml.SafeLoader)
@@ -168,7 +164,7 @@ def prune_dynamic_model_pytorch(model, pruning_ratio, pruning_epochs, device, tr
     model.train()
     for epoch in range(pruning_epochs):
         for name, module in model.named_modules():
-            if isinstance(module, torch.nn.Conv2d):
+            if isinstance(module, torch.nn.Conv2d) and prune_conv:
                 # n=2  pour les conv2d --> pruning avec l2 norm
                 prune.ln_structured(module, name='weight', amount=pr_per_epoch, n=2, dim=0)
 
@@ -184,7 +180,7 @@ def prune_dynamic_model_pytorch(model, pruning_ratio, pruning_epochs, device, tr
                 # # del module._parameters('weight_orig')
                 # module.register_parameter('weight_orig', nn.Parameter(sparse_tensor))
                 
-            if isinstance(module, torch.nn.Linear):
+            if isinstance(module, torch.nn.Linear) and prune_linear:
                 # n=1  pour les linear layers --> pruning avec l1 norm
                 prune.ln_structured(module, name='weight', amount=pr_per_epoch, n=1, dim=0)
 
@@ -202,9 +198,10 @@ def prune_dynamic_model_pytorch(model, pruning_ratio, pruning_epochs, device, tr
          
         
         if is_yolo :
-            
+            mloss = torch.zeros(3, device=device)  # mean losses
             pbar = tqdm(enumerate(train_loader), total=len(train_loader), bar_format=TQDM_BAR_FORMAT)
-            for batch_i, (imgs, targets, paths, _) in pbar:
+            print('\n' + '%11s' * 7) % ('Epoch', 'GPU_mem', 'box_loss', 'obj_loss', 'cls_loss', 'Instances', 'Size')
+            for i, (imgs, targets, paths, _) in pbar:
                 imgs = imgs.to(device).float() / 255.0
                 targets = targets.to(device)
         
@@ -220,7 +217,11 @@ def prune_dynamic_model_pytorch(model, pruning_ratio, pruning_epochs, device, tr
                 yolo_optimizer.zero_grad()
         
                 # Print progress
-                print(f'Epoch {epoch}, Batch {batch_i}, Loss: {loss.item()}')
+                mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
+                mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
+                pbar.set_description(('%11s' * 2 + '%11.4g' * 5) %
+                                     (f'{epoch+1}/{pruning_epochs}', mem, *mloss, targets.shape[0], imgs.shape[-1]))
+                # print(f'Epoch {epoch}, Batch {batch_i}, Loss: {loss.item()}')
         
                 # Update the learning rate
             scheduler.step()

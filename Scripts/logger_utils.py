@@ -14,5 +14,6 @@ def setup_logger(log_dir):
     
     # Add the file handler to the logger
     logger.addHandler(file_handler)
+    print(f'Logger is set up with path : {log_dir}/log.txt')
     
     return logger
