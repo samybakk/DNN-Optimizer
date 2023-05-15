@@ -5,7 +5,7 @@ from Dataset_utils import *
 import tempfile
 import tensorflow as tf
 import tensorflow_model_optimization as tfmot
-from yolov5.utils.loss import ComputeLoss
+from utils.loss import ComputeLoss
 
 
 

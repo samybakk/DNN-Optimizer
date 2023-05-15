@@ -11,8 +11,8 @@ import numpy as np
 import torch
 import time
 from Model_utils import *
-from yolov5.val import run
-from yolov5.utils.dataloaders import *
+from val import run
+from utils.dataloaders import *
 
 
 def test_inference_speed(model, device, input_size=(1,3,224, 224),num_samples=100,num_warmups=10,logger=None):

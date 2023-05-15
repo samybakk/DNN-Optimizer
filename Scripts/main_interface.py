@@ -1,8 +1,10 @@
+import sys
+sys.path.insert(0, './yolov5')
 import argparse
 from Model_utils import *
 from Worker import worker
 
-sys.path.insert(0, '../yolov5')
+
 
 
 """

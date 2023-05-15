@@ -5,10 +5,10 @@ import keras
 import torch
 from torch import nn
 from torchvision.models import resnet50, ResNet50_Weights,vgg16, VGG16_Weights
-from yolov5.models.common import DetectMultiBackend
-from yolov5.models.yolo import Model
-from yolov5.utils.general import intersect_dicts
-from yolov5.utils.torch_utils import select_device
+from models.common import DetectMultiBackend
+from models.yolo import Model
+from utils.general import intersect_dicts
+from utils.torch_utils import select_device
 import yaml
 
 def test_model_size(model,saved_model_path, device):
