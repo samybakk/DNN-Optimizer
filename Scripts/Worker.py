@@ -12,7 +12,7 @@ from Model_utils import *
 from logger_utils  import *
 
 
-from yolov5.utils.torch_utils import de_parallel, ModelEMA
+from utils.torch_utils import de_parallel, ModelEMA
 
 
 def worker(Dict):
