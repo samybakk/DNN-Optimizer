@@ -94,6 +94,7 @@ def worker(Dict):
         return model
         
     elif Dict['framework'] == 'torch':
+        torch.manual_seed(0)
         try :
             
             if yolo :

@@ -139,25 +139,26 @@ def prune_dynamic_model_pytorch(model, pruning_ratio, pruning_epochs, device, tr
     normal_optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
     criterion = torch.nn.CrossEntropyLoss()
 
-    batch_size = 8  # Batch size for training
-    img_size = 640  # Input image size
-    nc = 52  # Number of classes
-    hyp_path = 'yolov5/data/hyps/hyp.scratch-low.yaml'
-    with open(hyp_path ) as f:
-        yolo_hyp = yaml.load(f, Loader=yaml.SafeLoader)
-
-    yolo_hyp['label_smoothing'] = 0.0
-    model.nc = nc  # attach number of classes to model
-    model.hyp = yolo_hyp  # attach hyperparameters to model
-    # model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc  # attach class weights
+    if is_yolo:
+        batch_size = 8  # Batch size for training
+        img_size = 640  # Input image size
+        nc = 52  # Number of classes
+        hyp_path = 'yolov5/data/hyps/hyp.scratch-low.yaml'
+        with open(hyp_path ) as f:
+            yolo_hyp = yaml.load(f, Loader=yaml.SafeLoader)
     
-
-
-    yolo_optimizer = torch.optim.SGD(model.parameters(), lr=yolo_hyp['lr0'], momentum=yolo_hyp['momentum'],
-                                weight_decay=yolo_hyp['weight_decay'])
-    yolo_compute_loss = ComputeLoss(model)
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(yolo_optimizer, milestones=[round(yolo_hyp['lrf'] * 0.8),
-                                                                            round(yolo_hyp['lrf'] * 0.9)], gamma=0.1)
+        yolo_hyp['label_smoothing'] = 0.0
+        model.nc = nc  # attach number of classes to model
+        model.hyp = yolo_hyp  # attach hyperparameters to model
+        # model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc  # attach class weights
+        
+    
+    
+        yolo_optimizer = torch.optim.SGD(model.parameters(), lr=yolo_hyp['lr0'], momentum=yolo_hyp['momentum'],
+                                    weight_decay=yolo_hyp['weight_decay'])
+        yolo_compute_loss = ComputeLoss(model)
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(yolo_optimizer, milestones=[round(yolo_hyp['lrf'] * 0.8),
+                                                                                round(yolo_hyp['lrf'] * 0.9)], gamma=0.1)
     
     
     pr_per_epoch = pruning_ratio / pruning_epochs

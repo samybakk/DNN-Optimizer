@@ -4,7 +4,7 @@ from Distiller import *
 from Dataset_utils import *
 import torch.nn.functional as F
 
-from yolov5.utils.loss import ComputeLoss
+from utils.loss import ComputeLoss
 
 
 def distill_model_tensorflow(model, teacher_model, dataset_path, batch_size, temperature, alpha, epochs, PWInstance,logger):
