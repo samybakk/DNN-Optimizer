@@ -134,7 +134,7 @@ def basic_prune_finetune_model_pytorch(model, pruning_ratio, pruning_epochs, dev
     return model
 
 
-def prune_dynamic_model_pytorch(model, pruning_ratio, pruning_epochs, device, train_loader, val_loader,logger,is_yolo,prune_conv,prune_linear= False):
+def prune_dynamic_model_pytorch(model, pruning_ratio, pruning_epochs, device, train_loader, val_loader,logger,is_yolo,prune_conv=True,prune_linear= False):
     logger.info(f'\n\nPruning dynamic model\n')
     normal_optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
     criterion = torch.nn.CrossEntropyLoss()
@@ -200,7 +200,7 @@ def prune_dynamic_model_pytorch(model, pruning_ratio, pruning_epochs, device, tr
         if is_yolo :
             mloss = torch.zeros(3, device=device)  # mean losses
             pbar = tqdm(enumerate(train_loader), total=len(train_loader), bar_format=TQDM_BAR_FORMAT)
-            print('\n' + '%11s' * 7) % ('Epoch', 'GPU_mem', 'box_loss', 'obj_loss', 'cls_loss', 'Instances', 'Size')
+            print(('\n' + '%11s' * 7) % ('Epoch', 'GPU_mem', 'box_loss', 'obj_loss', 'cls_loss', 'Instances', 'Size'))
             for i, (imgs, targets, paths, _) in pbar:
                 imgs = imgs.to(device).float() / 255.0
                 targets = targets.to(device)

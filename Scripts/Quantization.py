@@ -30,6 +30,15 @@ class QuantizedModel(nn.Module):
         self.quant = torch.quantization.QuantStub()
         self.model = model
         self.dequant = torch.quantization.DeQuantStub()
+        
+        self.names = model.names
+        self.model.nc = model.model.nc
+        # Transfer all attributes from the original model
+        # for attr_name in dir(model):
+        #     attr_value = getattr(model, attr_name)
+        #     if not callable(attr_value) and not attr_name.startswith('__'):
+        #         print('attribute :',attr_name, attr_value)
+        #         setattr(self, attr_name, attr_value)
     
     def forward(self, x):
         x = self.quant(x)
@@ -53,8 +62,8 @@ def quantize_model_pytorch(model, desired_format, device,logger):
         desired_format = torch.float32
     
     if device == 'cpu' or True:
-        torch_quant_model = quantization.quantize_dynamic(model, {nn.Linear, nn.Conv2d}, dtype=desired_format)
-        torch_quant_model = QuantizedModel(torch_quant_model).to(device)
+        torch_quant_model = quantization.quantize_dynamic(model, {nn.Linear, nn.Conv2d}, dtype=desired_format,inplace=True)
+        # torch_quant_model = QuantizedModel(torch_quant_model).to(device)
     else:
     
         # Create a quantized model

@@ -10,6 +10,7 @@ from models.yolo import Model
 from utils.general import intersect_dicts
 from utils.torch_utils import select_device
 import yaml
+# import tensorrt as trt
 
 def test_model_size(model,saved_model_path, device):
     gpu_model_memory_mb = 0
@@ -68,7 +69,7 @@ def load_pytorch_model(model_path, device,yaml_path=None, exclude=[]):
             del model_dict
             imgsz = 28
             
-        elif model_path.split('/')[-1].startswith('PCODD'):
+        elif 'yolo' in model_path.split('/')[-1]:
     
             # model = DetectMultiBackend(model_path, device=torch.device(device), dnn=False, data=yaml_path, fp16=False)
             resume = True
@@ -84,7 +85,7 @@ def load_pytorch_model(model_path, device,yaml_path=None, exclude=[]):
             print( 'ckpt.keys() :')
             for x in ckpt.keys():
                 print(x)
-            
+            ckpt['model'].model.nc = nc  # set nc to 80
             model = Model(ckpt['model'].yaml, ch=3, nc=nc, anchors=yolo_hyp.get('anchors')).to(device)  # create
             exclude = ['anchor'] if ( yolo_hyp.get('anchors')) and not resume else []  # exclude keys
             csd = ckpt['model'].float().state_dict()  # checkpoint state_dict as FP32
@@ -128,3 +129,27 @@ def load_pytorch_model(model_path, device,yaml_path=None, exclude=[]):
 def load_tensorflow_model(model_path):
     model = tf.keras.models.load_model(model_path)
     return model
+
+# def convert_model_to_trt():
+#     # Step 3: Convert the PyTorch model to TensorRT
+#     trt_logger = trt.Logger(trt.Logger.WARNING)
+#
+#     # Create a TensorRT builder and network
+#     trt_builder = trt.Builder(trt_logger)
+#     trt_network = trt_builder.create_network()
+#
+#     # Configure optimization parameters
+#     trt_builder.max_batch_size = 1
+#     trt_builder.max_workspace_size = 1 << 30  # 1GB
+#
+#     # Convert the PyTorch model to TensorRT
+#     trt_converter = trt.pytorch.PyTorchConverter(trt_builder, trt_logger)
+#     trt_engine = trt_converter.convert(model)
+#
+#     # Step 4: Serialize and save the TensorRT engine
+#     trt_engine_path = 'path/to/save/tensorrt/engine.trt'
+#     trt_serialized_engine = trt_engine.serialize()
+#     with open(trt_engine_path, 'wb') as f:
+#         f.write(trt_serialized_engine)
+#
+#     print('TensorRT engine is saved successfully!')

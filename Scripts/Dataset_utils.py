@@ -11,8 +11,9 @@ import numpy as np
 import torch
 import time
 from Model_utils import *
-from val import run
+from val import run as val_run
 from utils.dataloaders import *
+
 
 
 def test_inference_speed(model, device, input_size=(1,3,224, 224),num_samples=100,num_warmups=10,logger=None):
@@ -45,7 +46,7 @@ def test_inference_speed_and_accuracy(model, val_loader, device,Dict,logger,is_y
     if is_yolo:
         if device == 'cuda':
             device = '0'
-        val_accuracy, val_accuracy_per_class, inference_speed = run(Dict['dataset_path'] + '/data.yaml', model_path,
+        val_accuracy, val_accuracy_per_class, inference_speed = val_run(Dict['dataset_path'] + '/data.yaml', model_path,
                                                     batch_size=8, imgsz=640, conf_thres=0.001, iou_thres=0.6,
                                                     device=device, workers=2, save_json=False, plots=False)
     

@@ -155,14 +155,15 @@ def worker(Dict):
         if dataset:
             
             if yolo :
-                initial_inference_speed, initial_val_accuracy = test_inference_speed_and_accuracy(Dict['model_path'], val_loader,
-                                                                                                  device=Dict[
-                                                                                                      'device'],
-                                                                                                  Dict=Dict,
-                                                                                                  logger=logger,
-                                                                                                  is_yolo=yolo)
-                logger.info(f"Speed of the initial model : {initial_inference_speed[0]}ms pre-process, {initial_inference_speed[1]}ms inference, {initial_inference_speed[2]}ms NMS per image ")
-                logger.info(f'Accuracy of the initial model | Precision : {100 * initial_val_accuracy[0]:.2f} % | Recall : {100 * initial_val_accuracy[1]:.2f} % | mAP50 : {100 * initial_val_accuracy[2]:.2f} % | mAP50-95 : {100 * initial_val_accuracy[3]:.2f} %')
+                pass
+                # initial_inference_speed, initial_val_accuracy = test_inference_speed_and_accuracy(Dict['model_path'], val_loader,
+                #                                                                                   device=Dict[
+                #                                                                                       'device'],
+                #                                                                                   Dict=Dict,
+                #                                                                                   logger=logger,
+                #                                                                                   is_yolo=yolo)
+                # logger.info(f"Speed of the initial model : {initial_inference_speed[0]}ms pre-process, {initial_inference_speed[1]}ms inference, {initial_inference_speed[2]}ms NMS per image ")
+                # logger.info(f'Accuracy of the initial model | Precision : {100 * initial_val_accuracy[0]:.2f} % | Recall : {100 * initial_val_accuracy[1]:.2f} % | mAP50 : {100 * initial_val_accuracy[2]:.2f} % | mAP50-95 : {100 * initial_val_accuracy[3]:.2f} %')
                 
             else :
                 initial_inference_speed, initial_val_accuracy = test_inference_speed_and_accuracy(model, val_loader,
@@ -213,15 +214,15 @@ def worker(Dict):
         if Dict['Knowledge_Distillation']:
             
             try :
-                teacher_model = load_pytorch_model(Dict['teacher_model_path'],Dict['device'])
+                teacher_model = load_pytorch_model(Dict['teacher_model_path'],Dict['device'],yaml_path=Dict['dataset_path'] + '/data.yaml')
             except Exception as e:
                 print(f"\n\nError loading the PyTorch Teacher model in {Dict['teacher_model_path']} :")
                 print(str(e)+"\n")
                 
             model = distill_model_pytorch(model, teacher_model,
                                           Dict['KD_temperature'], Dict['KD_alpha'], Dict['KD_epochs'],
-                                          Dict['device'],train_loader, val_loader,
-                                          Dict['PWInstance'],logger = logger)
+                                          Dict['device'],train_loader, val_loader,is_yolo=yolo,
+                                          logger = logger)
             
 
         #END OF OPTIMIZATION----------------------------------------------------------------------------------------
