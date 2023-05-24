@@ -1,3 +1,5 @@
+import os
+
 import tensorflow as tf
 import keras
 from keras.datasets import mnist
@@ -133,8 +135,8 @@ def load_pytorch_cifar10(dataset_path):
 
 def load_pytorch_dataset(dataset_path, batch_size=8, val_batch_size=16, train_fraction=1,val_fraction=1,logger=None):
     
-    print('Loading dataset...')
-    if dataset_path.split('/')[-1].startswith('cifar-10'):
+    print(f'Loading dataset at path {dataset_path}')
+    if dataset_path.split(os.sep)[-1].startswith('cifar-10'):
         train_dataset, val_dataset = load_pytorch_cifar10(dataset_path=dataset_path)
     else :
         train_transforms = transforms.Compose([
@@ -203,6 +205,7 @@ def load_pytorch_dataset(dataset_path, batch_size=8, val_batch_size=16, train_fr
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False,sampler=train_subset_sampler)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=val_batch_size, shuffle=False,sampler=val_subset_sampler)
     
+    print('finished loading dataset')
     return train_loader, val_loader
 
 

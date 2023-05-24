@@ -95,76 +95,64 @@ def worker(Dict):
         
     elif Dict['framework'] == 'torch':
         torch.manual_seed(0)
-        try :
+        
             
-            if yolo :
-                # Load the content of the .yaml file
-                yaml_file_path = os.path.join(Dict['dataset_path'], 'data.yaml')
-                with open(yaml_file_path, 'r') as file:
-                    content = file.read()
+        if yolo :
+            # Load the content of the .yaml file
+            yaml_file_path = os.path.join(Dict['dataset_path'], 'data.yaml')
+            with open(yaml_file_path, 'r') as file:
+                content = file.read()
 
-                # Get the directory path of the .yaml file
-                current_dir = os.path.dirname(__file__).split('\\')[:-1] # Get the current directory of the script
-                current_dir = os.sep.join(current_dir)
-                print('current_dir : '+current_dir)
+            # Get the directory path of the .yaml file
+            current_dir = os.path.dirname(__file__).split(os.sep)[:-1] # Get the current directory of the script
+            current_dir = os.sep.join(current_dir)
+            print('current_dir : '+current_dir)
 
-                absolute_path = os.path.join(current_dir,yaml_file_path)  # Get the absolute path
-                print('absolute_path : '+absolute_path)
-                yaml_dir = os.path.dirname(absolute_path)
-                print('yaml_dir : '+yaml_dir)
+            absolute_path = os.path.join(current_dir,yaml_file_path)  # Get the absolute path
+            print('absolute_path : '+absolute_path)
+            yaml_dir = os.path.dirname(absolute_path)
+            print('yaml_dir : '+yaml_dir)
 
-                # Define the new paths relative to the .yaml file directory
-                new_train_path = os.path.join(yaml_dir , 'train','images')
-                new_val_path = os.path.join(yaml_dir , 'valid','images')
-                new_test_path = os.path.join(yaml_dir , 'test','images')
-                
-                print('new_train_path : '+new_train_path)
-                print('new_val_path : '+new_val_path)
-                print('new_test_path : '+new_test_path)
-                # Modify the paths relative to the .yaml file directory
-                content = re.sub(r'train: .+', fr'train: {re.escape(new_train_path)}', content)
-                content = re.sub(r'val: .+', fr'val: {re.escape(new_val_path)}', content)
-                content = re.sub(r'test: .+', fr'test: {re.escape(new_test_path)}', content)
-                
-                # Save the modified content back to the .yaml file
-                print('saving the modified content back to the .yaml file')
-                with open(yaml_file_path, 'w') as file:
-                    file.write(content)
+            # Define the new paths relative to the .yaml file directory
+            new_train_path = os.path.join(yaml_dir , 'train','images')
+            new_val_path = os.path.join(yaml_dir , 'valid','images')
+            new_test_path = os.path.join(yaml_dir , 'test','images')
             
+            print('new_train_path : '+new_train_path)
+            print('new_val_path : '+new_val_path)
+            print('new_test_path : '+new_test_path)
+            # Modify the paths relative to the .yaml file directory
+            content = re.sub(r'train: .+', fr'train: {re.escape(new_train_path)}', content)
+            content = re.sub(r'val: .+', fr'val: {re.escape(new_val_path)}', content)
+            content = re.sub(r'test: .+', fr'test: {re.escape(new_test_path)}', content)
             
-            train_loader, val_loader = load_pytorch_dataset(Dict['dataset_path'], batch_size=Dict['batch_size'],
-                                                                train_fraction=Dict['train_fraction'],
-                                                                val_fraction=Dict['validation_fraction'],
-                                                                logger=logger)
-        except Exception as e:
-            if  not dataset:
-                print('No Dataset selected, Continuing with the optimization process without testing the model')
-                print('WARNING : Some optimization processes might not work correctly without a dataset')
-            else :
-                print("\n\nError loading the dataset :")
-                print(str(e)+'\n')
+            # Save the modified content back to the .yaml file
+            print('saving the modified content back to the .yaml file')
+            with open(yaml_file_path, 'w') as file:
+                file.write(content)
+        
+        
+        train_loader, val_loader = load_pytorch_dataset(Dict['dataset_path'], batch_size=Dict['batch_size'],
+                                                            train_fraction=Dict['train_fraction'],
+                                                            val_fraction=Dict['validation_fraction'],
+                                                            logger=logger)
+        
         
         # Loading The model
-        try :
-            model = load_pytorch_model(Dict['model_path'],Dict['device'],yaml_path=Dict['dataset_path'] + '/data.yaml')
-            
-        except Exception as e:
-            print(f"\n\nError loading the PyTorch model at {Dict['model_path']} :")
-            print(str(e)+'\n')
+        model = load_pytorch_model(Dict['model_path'],Dict['device'],yaml_path=Dict['dataset_path'] + '/data.yaml')
             
         #Testing intial model inference speed
         if dataset:
-            
             if yolo :
                 pass
-                # initial_inference_speed, initial_val_accuracy = test_inference_speed_and_accuracy(Dict['model_path'], val_loader,
-                #                                                                                   device=Dict[
-                #                                                                                       'device'],
-                #                                                                                   Dict=Dict,
-                #                                                                                   logger=logger,
-                #                                                                                   is_yolo=yolo)
-                # logger.info(f"Speed of the initial model : {initial_inference_speed[0]}ms pre-process, {initial_inference_speed[1]}ms inference, {initial_inference_speed[2]}ms NMS per image ")
-                # logger.info(f'Accuracy of the initial model | Precision : {100 * initial_val_accuracy[0]:.2f} % | Recall : {100 * initial_val_accuracy[1]:.2f} % | mAP50 : {100 * initial_val_accuracy[2]:.2f} % | mAP50-95 : {100 * initial_val_accuracy[3]:.2f} %')
+                initial_inference_speed, initial_val_accuracy = test_inference_speed_and_accuracy(Dict['model_path'], val_loader,
+                                                                                                  device=Dict[
+                                                                                                      'device'],
+                                                                                                  Dict=Dict,
+                                                                                                  logger=logger,
+                                                                                                  is_yolo=yolo)
+                logger.info(f"Speed of the initial model : {initial_inference_speed[0]}ms pre-process, {initial_inference_speed[1]}ms inference, {initial_inference_speed[2]}ms NMS per image ")
+                logger.info(f'Accuracy of the initial model | Precision : {100 * initial_val_accuracy[0]:.2f} % | Recall : {100 * initial_val_accuracy[1]:.2f} % | mAP50 : {100 * initial_val_accuracy[2]:.2f} % | mAP50-95 : {100 * initial_val_accuracy[3]:.2f} %')
                 
             else :
                 initial_inference_speed, initial_val_accuracy = test_inference_speed_and_accuracy(model, val_loader,
@@ -197,43 +185,37 @@ def worker(Dict):
         #BEGINNING OF OPTIMIZATION PROCESS--------------------------------------------------------------------------
 
         if Dict['Pruning']:
-            
+            print('Starting Pruning ...')
             # model = prune_model_pytorch(model, Dict['pr'], Dict['epochs'], Dict['batch_size'],
             #                        Dict['q'].isChecked(), Dict['PWInstance'],logger = logger)
             # model = GAL_prune_pytorch(model, Dict['pr'], Dict['epochs'], Dict['batch_size'],Dict['device']
             #                             ,Dict['PWInstance'],logger = logger)
             model = prune_dynamic_model_pytorch(model, Dict['pruning_ratio'], Dict['pruning_epochs'], Dict['device'],train_loader, val_loader,logger = logger,is_yolo=yolo)
             #model = basic_prune_finetune_model_pytorch(model, Dict['pr'], Dict['epochs'],Dict['device'],train_loader, val_loader,logger = logger)
-            
+            print('Pruning Done')
 
         if Dict['Quantization']:
-            
+            print('Starting Quantization ...')
             model = quantize_model_pytorch(model, Dict['desired_format'], Dict['device'],logger = logger)
             #model = quantization_aware_training_pytorch(model,train_loader,val_loader,Dict['device'],1,logger = logger)
-            
+            print('Quantization Done')
 
         if Dict['Knowledge_Distillation']:
-            
-            try :
-                teacher_model = load_pytorch_model(Dict['teacher_model_path'],Dict['device'],yaml_path=Dict['dataset_path'] + '/data.yaml')
-            except Exception as e:
-                print(f"\n\nError loading the PyTorch Teacher model in {Dict['teacher_model_path']} :")
-                print(str(e)+"\n")
+            print('Starting Knowledge Distillation ...')
+            teacher_model = load_pytorch_model(Dict['teacher_model_path'],Dict['device'],yaml_path=Dict['dataset_path'] + '/data.yaml')
                 
             model = distill_model_pytorch(model, teacher_model,
                                           Dict['KD_temperature'], Dict['KD_alpha'], Dict['KD_epochs'],
                                           Dict['device'],train_loader, val_loader,is_yolo=yolo,
                                           logger = logger)
-            
+            print('Knowledge Distillation Done')
 
         #END OF OPTIMIZATION----------------------------------------------------------------------------------------
         
 
-        
+        print('Evaluating and Saving the final model ...')
         if dataset:
             # Testing final model inference speed and accuracy
-            
-            
             if yolo:
                 yolo_optimizer = torch.optim.SGD(model.parameters(), 0.01,
                                                  momentum=0.937,
