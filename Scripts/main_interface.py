@@ -1,11 +1,9 @@
 import sys
+
 sys.path.insert(0, './yolov5')
 import argparse
 from Model_utils import *
 from Worker import worker
-
-
-
 
 """
 Run this script to run the model optimization pipeline without interface.
@@ -18,9 +16,7 @@ python main_interface.py --current_model_path Models/Input Models/PCODD_yolov5_t
 """
 
 
-
 def arg_parser():
-    
     parser = argparse.ArgumentParser(description='Model Optimization')
     parser.add_argument('--current_model_path', type=str,
                         help='path to the model to be compressed')
@@ -42,6 +38,10 @@ def arg_parser():
                         help='fraction of the dataset to be used for validation')
     parser.add_argument('--PruningEpochs', type=int, default=1,
                         help='number of epochs for pruning')
+    parser.add_argument('--PruningType', type=str, default='random_pruning',
+                        help='Method to use for pruning')
+    parser.add_argument('--PruningArgs', type=str, default='magnitude_and_channel',
+                        help='Way to apply pruning (magnitude_and_channel,magnitude,channel)')
     parser.add_argument('--KDEpochs', type=int, default=1,
                         help='number of epochs for Knowledge Distillation')
     parser.add_argument('--DesiredFormat', type=str, default='int8',
@@ -65,11 +65,11 @@ def arg_parser():
     parser.add_argument('--framework', type=str, default='torch',
                         help='framework of the model')
     opt = parser.parse_args()
-
+    
     return opt
-    
+
+
 def run(opt):
-    
     dictio = {'model_path': opt.current_model_path,
               'Pruning': opt.Pruning,
               'Quantization': opt.Quantization,
@@ -77,42 +77,49 @@ def run(opt):
               'pruning_ratio': opt.PruningRatio, 'dataset_path': opt.current_dataset_path,
               'train_fraction': opt.train_fraction, 'validation_fraction': opt.validation_fraction,
               'pruning_epochs': opt.PruningEpochs,
+              'pruning_type': opt.PruningType,
+              'pruning_args': opt.PruningArgs,
               'desired_format': opt.DesiredFormat,
               'teacher_model_path': opt.Teacher_Model_Path,
               'KD_temperature': opt.Temperature, 'save_name': opt.save_name,
               'save_unziped': opt.SaveUnziped,
               'convert_tflite': opt.ConvertTFLite,
               'Compressed': opt.Compressed, 'KD_alpha': opt.Alpha,
-              'KD_epochs': opt.KDEpochs, 'device': opt.device,
+              'KD_epochs': opt.KDEpochs, 'device': 'cpu',
               'framework': opt.framework}
 
     worker(dictio)
     
-    
     # index = 0
-    # pr = [2,3,4,5,6,7,8,9]
-    # pre = [2,3,4,5,5,5,5,5]
-    # for pr, pre in zip(pr,pre):
-    #     dictio = {'model_path': opt.current_model_path,
-    #           'Pruning': opt.Pruning,
-    #           'Quantization': opt.Quantization,
-    #           'Knowledge_Distillation': opt.Knowledge_Distillation, 'batch_size': opt.batch_size,
-    #           'pruning_ratio': pr/10, 'dataset_path': opt.current_dataset_path,
-    #           'train_fraction': opt.train_fraction, 'validation_fraction': opt.validation_fraction,
-    #           'pruning_epochs': pre,
-    #           'desired_format': opt.DesiredFormat,
-    #           'teacher_model_path': opt.Teacher_Model_Path,
-    #           'KD_temperature': opt.Temperature, 'save_name': f'yolov5s_pruned_pr_{pr/10}_ep_{pre}',
-    #           'save_unziped': opt.SaveUnziped,
-    #           'convert_tflite': opt.ConvertTFLite,
-    #           'Compressed': opt.Compressed, 'KD_alpha': opt.Alpha,
-    #           'KD_epochs': opt.KDEpochs, 'device': opt.device,
-    #           'framework': opt.framework}
+    # prs = [2,5,8]
+    # pms = ['global_dynamic_pruning']
     #
-    #     print('\n\nNew Process | index : ',index)
-    #     worker(dictio)
-    #     index += 1
-        
+    # for pm in pms :
+    #     for pr in prs:
+    #         sn = f'Resnet50_{pm}_ratio_{pr/10}_{opt.PruningArgs}_epochs_5'
+    #         dictio = {'model_path': opt.current_model_path,
+    #                   'Pruning': opt.Pruning,
+    #                   'Quantization': opt.Quantization,
+    #                   'Knowledge_Distillation': opt.Knowledge_Distillation, 'batch_size': opt.batch_size,
+    #                   'pruning_ratio': pr/10, 'dataset_path': opt.current_dataset_path,
+    #                   'train_fraction': opt.train_fraction, 'validation_fraction': opt.validation_fraction,
+    #                   'pruning_epochs': 5,
+    #                   'pruning_type': pm,
+    #                   'pruning_args': opt.PruningArgs,
+    #                   'desired_format': opt.DesiredFormat,
+    #                   'teacher_model_path': opt.Teacher_Model_Path,
+    #                   'KD_temperature': opt.Temperature, 'save_name': sn,
+    #                   'save_unziped': opt.SaveUnziped,
+    #                   'convert_tflite': opt.ConvertTFLite,
+    #                   'Compressed': opt.Compressed, 'KD_alpha': opt.Alpha,
+    #                   'KD_epochs': opt.KDEpochs, 'device': opt.device,
+    #                   'framework': opt.framework}
+    #
+    #         print('\n\nNew Process | index : ',index)
+    #         worker(dictio)
+    #         index += 1
+
+
 if __name__ == "__main__":
-    opt =arg_parser()
+    opt = arg_parser()
     run(opt)

@@ -186,19 +186,47 @@ def worker(Dict):
 
         if Dict['Pruning']:
             print('Starting Pruning ...')
-            # model = prune_model_pytorch(model, Dict['pr'], Dict['epochs'], Dict['batch_size'],
-            #                        Dict['q'].isChecked(), Dict['PWInstance'],logger = logger)
-            # model = GAL_prune_pytorch(model, Dict['pr'], Dict['epochs'], Dict['batch_size'],Dict['device']
-            #                             ,Dict['PWInstance'],logger = logger)
-            model = prune_dynamic_model_pytorch(model, Dict['pruning_ratio'], Dict['pruning_epochs'], Dict['device'],train_loader, val_loader,logger = logger,is_yolo=yolo)
-            #model = basic_prune_finetune_model_pytorch(model, Dict['pr'], Dict['epochs'],Dict['device'],train_loader, val_loader,logger = logger)
+            
+            if Dict['pruning_args'] == 'magnitude_and_channel' :
+                magnitude_pruning = True
+                channel_pruning = True
+            elif Dict['pruning_args'] == 'magnitude' :
+                magnitude_pruning = True
+                channel_pruning = False
+                
+            elif Dict['pruning_args'] == 'channel' :
+                magnitude_pruning = False
+                channel_pruning = True
+            
+            
+            
+            if Dict['pruning_type']=='random_pruning' :
+                model = random_prune_finetune_model_pytorch(model, Dict['pruning_ratio'], Dict['pruning_epochs'],
+                                                           Dict['device'],train_loader,val_loader,logger,yolo)
+            elif Dict['pruning_type']=='dynamic_pruning' :
+                model = prune_dynamic_model_pytorch(model, Dict['pruning_ratio'], Dict['pruning_epochs'],
+                                                    Dict['device'], train_loader, val_loader, logger=logger,
+                                                    is_yolo=yolo,magnitude_pruning=magnitude_pruning,channel_pruning= channel_pruning)
+
+            elif Dict['pruning_type']=='global_pruning' :
+                model = prune_global_model_pytorch(model, Dict['pruning_ratio'], logger)
+                
+            elif Dict['pruning_type']=='global_dynamic_pruning' :
+                model = prune_global_dynamic_model_pytorch(model, Dict['pruning_ratio'], Dict['pruning_epochs'],
+                                                                Dict['device'], train_loader, val_loader, logger,yolo)
+ 
+            else :
+                print('ERROR : No pruning method selected')
+
+            sparsity_list = []
+            for name, module in model.named_modules():
+                if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
+                    sparsity_list.append(100. * float(torch.sum(module.weight == 0)) / float(module.weight.nelement()))
+            print("Average Sparsity in layers : {:.2f}%".format(sum(sparsity_list)/len(sparsity_list)))
+            
             print('Pruning Done')
 
-        if Dict['Quantization']:
-            print('Starting Quantization ...')
-            model = quantize_model_pytorch(model, Dict['desired_format'], Dict['device'],logger = logger)
-            #model = quantization_aware_training_pytorch(model,train_loader,val_loader,Dict['device'],1,logger = logger)
-            print('Quantization Done')
+        
 
         if Dict['Knowledge_Distillation']:
             print('Starting Knowledge Distillation ...')
@@ -210,6 +238,13 @@ def worker(Dict):
                                           logger = logger)
             print('Knowledge Distillation Done')
 
+        if Dict['Quantization']:
+            print('Starting Quantization ...')
+            Dict['device'] = 'cpu'
+            model = quantize_model_pytorch(model, Dict['desired_format'], Dict['device'], train_loader, logger=logger)
+
+            # model = quantization_aware_training_pytorch(model,train_loader,val_loader,Dict['device'],1,logger = logger)
+            print('Quantization Done')
         #END OF OPTIMIZATION----------------------------------------------------------------------------------------
         
 
