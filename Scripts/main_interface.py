@@ -85,7 +85,7 @@ def run(opt):
               'save_unziped': opt.SaveUnziped,
               'convert_tflite': opt.ConvertTFLite,
               'Compressed': opt.Compressed, 'KD_alpha': opt.Alpha,
-              'KD_epochs': opt.KDEpochs, 'device': 'cpu',
+              'KD_epochs': opt.KDEpochs, 'device': opt.device,
               'framework': opt.framework}
 
     worker(dictio)
