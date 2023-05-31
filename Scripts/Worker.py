@@ -44,16 +44,29 @@ class Worker(QRunnable):
         
         # Create a log directory if it doesn't exist
         log_dir = 'results/' + Dict['save_name']
-        os.makedirs(log_dir, exist_ok=True)
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir, exist_ok=False)
 
-        # Create a logger
+        else:
+            counter = 1
+            while True:
+                new_dir = f"{log_dir}_{counter}"
+        
+                if not os.path.exists(new_dir):
+                    os.makedirs(new_dir, exist_ok=False)
+                    break
+        
+                counter += 1
+            log_dir = new_dir
+    
+            # Create a logger
         logger = setup_logger(log_dir)
         for key, value in Dict.items():
             if isinstance(value, str) or isinstance(value, int) or isinstance(value, float) or isinstance(value, bool):
                 logger.info(f'{key} : {value}')
 
-        yolo = 'yolo' in Dict['model_path'].split('/')[-1]
-        dataset = Dict['dataset_path'].split('/')[-1] != ''
+        yolo = 'yolo' in Dict['model_path'].split(os.sep)[-1]
+        dataset = Dict['dataset_path'].split(os.sep)[-1] != ''
 
 
         if Dict['framework'] == 'tf':
@@ -127,6 +140,7 @@ class Worker(QRunnable):
             return model
                 
         elif Dict['framework'] == 'torch':
+            torch.manual_seed(0)
             try :
                 
                 if yolo :
@@ -136,19 +150,30 @@ class Worker(QRunnable):
                         content = file.read()
     
                     # Get the directory path of the .yaml file
-                    yaml_dir = os.path.dirname(yaml_file_path)
-
+                    current_dir = os.path.dirname(__file__).split(os.sep)[:-1]  # Get the current directory of the script
+                    current_dir = os.sep.join(current_dir)
+                    print('current_dir : ' + current_dir)
+    
+                    absolute_path = os.path.join(current_dir, yaml_file_path)  # Get the absolute path
+                    print('absolute_path : ' + absolute_path)
+                    yaml_dir = os.path.dirname(absolute_path)
+                    print('yaml_dir : ' + yaml_dir)
+    
                     # Define the new paths relative to the .yaml file directory
-                    new_train_path = yaml_dir + r'/train/images'
-                    new_val_path = yaml_dir + r'/valid/images'
-                    new_test_path = yaml_dir + r'/test/images'
-                    
+                    new_train_path = os.path.join(yaml_dir, 'train', 'images')
+                    new_val_path = os.path.join(yaml_dir, 'valid', 'images')
+                    new_test_path = os.path.join(yaml_dir, 'test', 'images')
+    
+                    print('new_train_path : ' + new_train_path)
+                    print('new_val_path : ' + new_val_path)
+                    print('new_test_path : ' + new_test_path)
                     # Modify the paths relative to the .yaml file directory
-                    content = re.sub(r'train: .+', f'train: {new_train_path}', content)
-                    content = re.sub(r'val: .+', f'val: {new_val_path}', content)
-                    content = re.sub(r'test: .+', f'test: {new_test_path}', content)
-                    
+                    content = re.sub(r'train: .+', fr'train: {re.escape(new_train_path)}', content)
+                    content = re.sub(r'val: .+', fr'val: {re.escape(new_val_path)}', content)
+                    content = re.sub(r'test: .+', fr'test: {re.escape(new_test_path)}', content)
+    
                     # Save the modified content back to the .yaml file
+                    print('saving the modified content back to the .yaml file')
                     with open(yaml_file_path, 'w') as file:
                         file.write(content)
                 
@@ -158,7 +183,7 @@ class Worker(QRunnable):
                                                                     val_fraction=Dict['validation_fraction'],
                                                                     logger=logger)
             except Exception as e:
-                if Dict['dataset_path'].split('/')[-1] == '':
+                if Dict['dataset_path'].split(os.sep)[-1] == '':
                     print('No Dataset selected, Continuing with the optimization process without testing the model')
                     print('WARNING : Some optimization processes might not work correctly without a dataset')
                 else :
@@ -178,19 +203,6 @@ class Worker(QRunnable):
                 
             #Testing intial model inference speed
             if dataset:
-                
-                # if Dict['device'] == 'cuda':
-                #     # Testing final model inference speed and accuracy
-                #     initial_inference_speed, initial_val_accuracy = test_inference_speed_memory_and_accuracy(model, val_loader,
-                #                                                                                       device=Dict[
-                #                                                                                           'device'],
-                #                                                                                       logger=logger)
-                #     print(f"Inference speed of the initial model : {initial_inference_speed:.4f} seconds")
-                #     print(f'Accuracy of the initial model : {100 * initial_val_accuracy:.2f} %')
-                #     logger.info(f"Inference speed of the initial model : {initial_inference_speed:.4f} seconds")
-                #     logger.info(f'Accuracy of the initial model : {100 * initial_val_accuracy:.2f} %')
-                # else :
-                # Testing final model inference speed and accuracy
                 
                 if yolo :
                     initial_inference_speed, initial_val_accuracy = test_inference_speed_and_accuracy(Dict['model_path'], val_loader,
@@ -237,25 +249,44 @@ class Worker(QRunnable):
 
             if Dict['Pruning']:
                 Dict['PWInstance'].update_progress_signal.emit('Starting Pruning...')
-                
-                # model = prune_model_pytorch(model, Dict['pr'], Dict['epochs'], Dict['batch_size'],
-                #                        Dict['q'].isChecked(), Dict['PWInstance'],logger = logger)
-                # model = GAL_prune_pytorch(model, Dict['pr'], Dict['epochs'], Dict['batch_size'],Dict['device']
-                #                             ,Dict['PWInstance'],logger = logger)
-                model = prune_dynamic_model_pytorch(model, Dict['pruning_ratio'], Dict['pruning_epochs'], Dict['device'],train_loader, val_loader,logger = logger,is_yolo=yolo)
-                #model = basic_prune_finetune_model_pytorch(model, Dict['pr'], Dict['epochs'],Dict['device'],train_loader, val_loader,logger = logger)
-                
+
+                if Dict['pruning_args'] == 'magnitude_and_channel':
+                    magnitude_pruning = True
+                    channel_pruning = True
+                elif Dict['pruning_args'] == 'magnitude':
+                    magnitude_pruning = True
+                    channel_pruning = False
+
+                elif Dict['pruning_args'] == 'channel':
+                    magnitude_pruning = False
+                    channel_pruning = True
+
+                if Dict['pruning_type'] == 'random_pruning':
+                    model = random_prune_finetune_model_pytorch(model, Dict['pruning_ratio'], Dict['pruning_epochs'],
+                                                                Dict['device'], train_loader, val_loader, logger, yolo,Dict['PWInstance'])
+                elif Dict['pruning_type'] == 'dynamic_pruning':
+                    model = prune_dynamic_model_pytorch(model, Dict['pruning_ratio'], Dict['pruning_epochs'],
+                                                        Dict['device'], train_loader, val_loader, logger=logger,
+                                                        is_yolo=yolo, magnitude_pruning=magnitude_pruning,
+                                                        channel_pruning=channel_pruning,PWInstance=Dict['PWInstance'])
+
+                elif Dict['pruning_type'] == 'global_pruning':
+                    model = prune_global_model_pytorch(model, Dict['pruning_ratio'], logger)
+
+                elif Dict['pruning_type'] == 'global_dynamic_pruning':
+                    model = prune_global_dynamic_model_pytorch(model, Dict['pruning_ratio'], Dict['pruning_epochs'],
+                                                               Dict['device'], train_loader, val_loader, logger, yolo,Dict['PWInstance'])
+
+                sparsity_list = []
+                for name, module in model.named_modules():
+                    if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
+                        sparsity_list.append(
+                            100. * float(torch.sum(module.weight == 0)) / float(module.weight.nelement()))
+                logger.info("Average Sparsity in layers : {:.2f}%".format(sum(sparsity_list) / len(sparsity_list)))
                 Dict['PWInstance'].undo_progress_signal.emit()
                 Dict['PWInstance'].update_progress_signal.emit('Pruning completed')
 
-            if Dict['Quantization']:
-                Dict['PWInstance'].update_progress_signal.emit('Starting Quantization...')
-                
-                model = quantize_model_pytorch(model, Dict['desired_format'], Dict['device'],logger = logger)
-                #model = quantization_aware_training_pytorch(model,train_loader,val_loader,Dict['device'],1,logger = logger)
-                
-                Dict['PWInstance'].undo_progress_signal.emit()
-                Dict['PWInstance'].update_progress_signal.emit('Quantization completed')
+            
 
             if Dict['Knowledge_Distillation']:
                 Dict['PWInstance'].update_progress_signal.emit('Starting Knowledge transfer...')
@@ -274,6 +305,18 @@ class Worker(QRunnable):
                 
                 Dict['PWInstance'].undo_progress_signal.emit()
                 Dict['PWInstance'].update_progress_signal.emit('Knowledge transfer completed')
+
+            if Dict['Quantization']:
+                Dict['PWInstance'].update_progress_signal.emit('Starting Quantization...')
+
+                Dict['device'] = 'cpu'
+                model = quantize_model_pytorch(model, Dict['desired_format'], Dict['device'], train_loader,
+                                               logger=logger)
+
+                # model = quantization_aware_training_pytorch(model,train_loader,val_loader,Dict['device'],1,logger = logger)
+
+                Dict['PWInstance'].undo_progress_signal.emit()
+                Dict['PWInstance'].update_progress_signal.emit('Quantization completed')
 
             #END OF OPTIMIZATION----------------------------------------------------------------------------------------
             

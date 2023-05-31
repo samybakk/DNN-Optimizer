@@ -84,12 +84,16 @@ class ProgressWindow(QMainWindow):
     @pyqtSlot(int,float)
     def update_pruning_graph_data(self,epoch, data):
 
-        if epoch!=0:
-            self.graph2_x.append(self.graph2_x[-1]+1)
-            self.graph2_y.append(data) #logs['val_accuracy']
-        else:
-            self.graph2_x.append(0)
-            self.graph2_y.append(data)
+        # if epoch!=1:
+        #     self.graph2_x.append(self.graph2_x[-1]+1)
+        #     self.graph2_y.append(data) #logs['val_accuracy']
+        # else:
+        #     self.graph2_x.append(1)
+        #     self.graph2_y.append(data)
+
+        self.graph2_x.append(epoch)
+        self.graph2_y.append(data)
+
 
         self.data_line2.setData(self.graph2_x, self.graph2_y)
         

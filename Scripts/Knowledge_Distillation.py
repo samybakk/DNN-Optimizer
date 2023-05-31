@@ -45,13 +45,7 @@ def distill_model_pytorch(student_model, teacher_model, temperature, alpha, KD_e
             with torch.no_grad():
                 teacher_pred = teacher_model(data)
 
-            # student_loss_sum = 0.0
-            # teacher_loss_sum = 0.0
             student_loss = criterion(student_pred, target)
-            # for teacher_pred, target_pred, student_pred in zip(teacher_output, target, output):
-            #     student_loss_sum += nn.functional.cross_entropy(student_pred, target_pred)
-            #     _, student_pred = torch.max(student_pred, 0)
-            #     _, teacher_pred = torch.max(teacher_pred, 0)
             teacher_loss = nn.KLDivLoss()(F.log_softmax(student_pred/temperature, dim=0),
                              F.softmax(teacher_pred/temperature, dim=0)) * ( temperature * temperature)
 
@@ -148,3 +142,19 @@ def exp_distill_model_pytorch(student_model, teacher_model, dataset_path, batch_
         _, predicted = torch.max(output, 1)
         correct += (predicted == labels).sum().item()
         total += labels.size(0)
+        
+class TfPlotDK(keras.callbacks.Callback):
+    def __init__(self, PW):
+        self.PW = PW
+        self.PW.on_dk_epoch_end_signal.connect(self.PW.update_dk_graph_data)
+
+    def on_epoch_end(self, epoch, logs={}):
+        self.PW.on_dk_epoch_end_signal.emit(epoch, logs['sparse_categorical_accuracy'])
+        
+class PTPlotDK():
+    def __init__(self, PW):
+        self.PW = PW
+        self.PW.on_dk_epoch_end_signal.connect(self.PW.update_dk_graph_data)
+
+    def on_epoch_end(self, epoch, loss):
+        self.PW.on_dk_epoch_end_signal.emit(epoch, loss)
