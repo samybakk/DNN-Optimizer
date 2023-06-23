@@ -41,7 +41,7 @@ def test_inference_speed(model, device, input_size=(1,3,224, 224),num_samples=10
     return elapsed_time_avg
 
 
-def test_inference_speed_and_accuracy(model, val_loader, device,Dict,logger,is_yolo):
+def test_inference_speed_and_accuracy(model, val_loader, device,Dict,logger,half,is_yolo):
     if isinstance(model, str):
         model_path = model
     
@@ -49,8 +49,8 @@ def test_inference_speed_and_accuracy(model, val_loader, device,Dict,logger,is_y
         if device == 'cuda':
             device = '0'
         val_accuracy, val_accuracy_per_class, inference_speed = val_run(Dict['dataset_path'] + '/data.yaml', model_path,
-                                                    batch_size=8, imgsz=640, conf_thres=0.001, iou_thres=0.6,
-                                                    device=device, workers=2, save_json=False, plots=False)
+                                                    batch_size=1, imgsz=640, conf_thres=0.001, iou_thres=0.6,
+                                                    device=device, workers=1, save_json=False, plots=False)
     
         print(f'val_accuracy : {val_accuracy}')
         print(f'val_accuracy_per_class : {val_accuracy_per_class}')
@@ -67,6 +67,8 @@ def test_inference_speed_and_accuracy(model, val_loader, device,Dict,logger,is_y
             start_time = time.time()
             for inputs, labels in val_loader:
                 inputs, labels = inputs.to(device), labels.to(device)
+                if half :
+                    inputs = inputs.half()
                 outputs = model(inputs)
                 _, predicted = torch.max(outputs, dim=1)
                 total_correct += (predicted == labels).sum().item()
@@ -83,6 +85,18 @@ def test_inference_speed_and_accuracy(model, val_loader, device,Dict,logger,is_y
     
     return inference_speed, val_accuracy
 
+
+def evaluate_tensorflow_model(model, val_data, val_labels):
+    import time
+    
+    # Measure the average evaluation time
+    num_samples = len(val_data)
+    start_time = time.time()
+    _, accuracy = model.evaluate(val_data, val_labels)
+    end_time = time.time()
+    avg_eval_time = (end_time - start_time) / num_samples
+    
+    return accuracy, avg_eval_time
 
 def load_pytorch_cifar10(dataset_path):
     import os
@@ -133,11 +147,54 @@ def load_pytorch_cifar10(dataset_path):
     
     return train_dataset, val_dataset
 
-def load_pytorch_dataset(dataset_path, batch_size=8, val_batch_size=16, train_fraction=1,val_fraction=1,logger=None):
+
+def load_tensorflow_data(dataset_path,img_size,batch_size):
+    
+    if 'cifar-10' in dataset_path :
+        (training_images, training_labels), (validation_images, validation_labels) = tf.keras.datasets.cifar10.load_data()
+        return training_images, training_labels, validation_images, validation_labels
+
+    # Create a dataset for the training data
+    train_dataset = tf.keras.preprocessing.image_dataset_from_directory(
+        dataset_path + '/train',
+        image_size=img_size,
+        batch_size=batch_size
+    )
+
+    # Create a dataset for the validation data
+    val_dataset = tf.keras.preprocessing.image_dataset_from_directory(
+        dataset_path + '/val',
+        image_size=img_size,
+        batch_size=batch_size
+    )
+
+    # Normalize the data
+    normalization_layer = tf.keras.layers.experimental.preprocessing.Rescaling(1. / 255)
+    train_dataset = train_dataset.map(lambda x, y: (normalization_layer(x), y))
+    val_dataset = val_dataset.map(lambda x, y: (normalization_layer(x), y))
+
+    # Separate the data and labels
+    train_data = train_dataset.unbatch().map(lambda x, y: x)
+    train_labels = train_dataset.unbatch().map(lambda x, y: y)
+    val_data = val_dataset.unbatch().map(lambda x, y: x)
+    val_labels = val_dataset.unbatch().map(lambda x, y: y)
+
+    return train_data, train_labels, val_data, val_labels
+
+
+
+def load_pytorch_dataset(dataset_path, batch_size=8, val_batch_size=16, train_fraction=1,val_fraction=1,half=False,logger=None):
     
     print(f'Loading dataset at path {dataset_path}')
     if  'cifar-10' in dataset_path.split(os.sep)[-1]:
         train_dataset, val_dataset = load_pytorch_cifar10(dataset_path=dataset_path)
+        # transform = transforms.Compose([
+        #     transforms.ToTensor(),
+        #     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+        #
+        # train_dataset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
+        # val_dataset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
+        
     else :
         train_transforms = transforms.Compose([
             transforms.RandomResizedCrop(224),

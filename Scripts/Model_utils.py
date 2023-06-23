@@ -39,7 +39,7 @@ def test_model_size(model,saved_model_path, device):
     return object_size_mb, gpu_model_memory_mb,disk_size_mb
 
 
-def load_pytorch_model(model_path, device,yaml_path=None, exclude=[]):
+def load_pytorch_model(model_path, device,half =False,yaml_path=None, exclude=[]):
 
         
     if 'vgg16' in model_path.split(os.sep)[-1]:
@@ -67,13 +67,14 @@ def load_pytorch_model(model_path, device,yaml_path=None, exclude=[]):
         #     elif type(m) is nn.Upsample:
         #         m.recompute_scale_factor = None  # torch 1.11.0 compatibility
     
-    elif 'resnet50' in model_path.split(os.sep)[-1]:
+    elif 'resnet50' in model_path.split(os.sep)[-1] or 'Resnet50' in model_path.split(os.sep)[-1]:
         print(f'Loading Resnet50 model at {model_path}')
+        state_dict = 'state_dict_s' if 'GAL' in model_path.split(os.sep)[-1] else 'state_dict'
         model_dict = torch.load(model_path, map_location='cpu')
-        number_of_classes = [x for x in model_dict['state_dict'].values()][-1].shape[0]
+        number_of_classes = [x for x in model_dict[state_dict].values()][-1].shape[0]
         model = resnet50()
         model.fc = torch.nn.Linear(model.fc.in_features, number_of_classes)
-        model.load_state_dict(model_dict['state_dict'])
+        model.load_state_dict(model_dict[state_dict])
         del model_dict
         imgsz = 28
         
@@ -81,7 +82,7 @@ def load_pytorch_model(model_path, device,yaml_path=None, exclude=[]):
         print(f'Loading YOLO model at {model_path}')
         # model = DetectMultiBackend(model_path, device=torch.device(device), dnn=False, data=yaml_path, fp16=False)
         resume = True
-        nc = 52
+        nc = 4
 
         yolo_hyp = {'giou': 3.54, 'cls': 1.0, 'cls_pw': 0.5, 'obj': 64.3, 'obj_pw': 1.0, 'iou_t': 0.225,
                     'lr0': 0.01,
@@ -103,6 +104,10 @@ def load_pytorch_model(model_path, device,yaml_path=None, exclude=[]):
  
     model = model.to(device)
     print(f'Loaded model on {device}')
+    
+    if half :
+        model.half()
+    
     return model
 
 def load_tensorflow_model(model_path):

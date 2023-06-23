@@ -312,9 +312,11 @@ class QuantizedModel(nn.Module):
 def quantize_model_pytorch(model, desired_format, device,train_loader,logger):
     logger.info('\n\nQuantizing the model\n')
     if desired_format == 'int8':
-        desired_format = torch.qint8
+        desired_activation_format = torch.qint8
+        desired_weight_format = torch.quint8
     elif desired_format == 'uint8':
-        desired_format = torch.quint8
+        desired_activation_format = torch.quint8
+        desired_weight_format = torch.qint8
     elif desired_format == 'int16':
         desired_format = torch.float16
         print('int16 not available for pytorch | using float16 instead')
@@ -350,8 +352,8 @@ def quantize_model_pytorch(model, desired_format, device,train_loader,logger):
         torch_quant_model = torch.quantization.fuse_modules(torch_quant_model, modules_to_fuse)
         qconfig = torch.quantization.get_default_qconfig('fbgemm')
         custom_qconfig = torch.quantization.QConfig(
-            activation=MinMaxObserver.with_args(dtype=desired_format),
-            weight=torch.quantization.default_per_channel_weight_observer.with_args(dtype=desired_format)
+            activation=MinMaxObserver.with_args(dtype=desired_activation_format),
+            weight=torch.quantization.default_per_channel_weight_observer.with_args(dtype=desired_weight_format)
         )
         torch_quant_model.qconfig = custom_qconfig
         
@@ -369,27 +371,27 @@ def quantize_model_pytorch(model, desired_format, device,train_loader,logger):
 
         torch.quantization.convert(torch_quant_model, inplace=True)
     
-    elif device == 'cpu' or True:
-        torch_quant_model = quantization.quantize_dynamic(model, {nn.Linear, nn.Conv2d}, dtype=desired_format).cpu()
-        # torch_quant_model = QuantizedModel(torch_quant_model).to(device)
-    else:
-    
-        # Create a quantized model
-        model = QuantizedModel(model.to(device))
-        
-        model.eval()
-    
-        # Define the quantization configuration
-        quantization_scheme = 'x86' # only int8 for now
-        qconfig = torch.quantization.get_default_qconfig(quantization_scheme)
-        model.qconfig = qconfig
-    
-        # Prepare and convert the model for quantization
-        torch.quantization.prepare(model, inplace=True)
-        torch.quantization.convert(model, inplace=True)
-        torch_quant_model = model.to(device)
-    
-        # torch_quant_model = torchvision.models.quantization.resnet50(quantize=True).to(device)
+    # elif device == 'cpu' or True:
+    #     torch_quant_model = quantization.quantize_dynamic(model, {nn.Linear, nn.Conv2d}, dtype=desired_format).cpu()
+    #     # torch_quant_model = QuantizedModel(torch_quant_model).to(device)
+    # else:
+    #
+    #     # Create a quantized model
+    #     model = QuantizedModel(model.to(device))
+    #
+    #     model.eval()
+    #
+    #     # Define the quantization configuration
+    #     quantization_scheme = 'x86' # only int8 for now
+    #     qconfig = torch.quantization.get_default_qconfig(quantization_scheme)
+    #     model.qconfig = qconfig
+    #
+    #     # Prepare and convert the model for quantization
+    #     torch.quantization.prepare(model, inplace=True)
+    #     torch.quantization.convert(model, inplace=True)
+    #     torch_quant_model = model.to(device)
+    #
+    #     # torch_quant_model = torchvision.models.quantization.resnet50(quantize=True).to(device)
 
         
     return torch_quant_model

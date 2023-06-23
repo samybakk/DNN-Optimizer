@@ -1,13 +1,20 @@
+from copy import deepcopy
+from datetime import datetime
+
+from torch.optim import lr_scheduler
 from tqdm import tqdm
+import shutil
 
 from Distiller import *
 from Dataset_utils import *
 import torch.nn.functional as F
 
 from utils.loss import ComputeLoss
+from utils.torch_utils import de_parallel, ModelEMA
+from train import main as train_yolov5_kd
 
 
-def distill_model_tensorflow(model, teacher_model, dataset_path, batch_size, temperature, alpha, epochs, PWInstance,logger):
+def distill_model_tensorflow(model, teacher_model, dataset_path, batch_size, temperature, alpha, epochs,logger):
     # train_data, train_labels, test_data, test_labels = load_and_prep_images(dataset_path,(28,28), batch_size, batch_size, 0.1,True)
     train_data, train_labels, test_data, test_labels = load_mnist(epochs, batch_size, 0.1)
     
@@ -28,212 +35,129 @@ def distill_model_tensorflow(model, teacher_model, dataset_path, batch_size, tem
     distiller.evaluate(test_data, test_labels)
     return model
 
+def distill_model_yolo(student_model, teacher_model,dataset_path, KD_epochs,logger):
+    logger.info("\n\nStarting Knowledge Distillation\n")
+
+    yolo_optimizer = torch.optim.SGD(student_model.parameters(), 0.01,
+                                     momentum=0.937,
+                                     weight_decay=0.0005)
+    ema = ModelEMA(student_model)
+    save_name = 'kd'
+    saved_model_path = 'Models' + os.sep + 'Temp' + os.sep + save_name + '.pt'
+    ckpt = {
+        'epoch': 0,
+        'best_fitness': 0,
+        'model': deepcopy(de_parallel(student_model)).half(),
+        'ema': deepcopy(ema.ema).half(),
+        'updates': ema.updates,
+        'optimizer': yolo_optimizer.state_dict(),
+        'opt': None,
+        'git': None,  # {remote, branch, commit} if a git repo
+        'date': datetime.now().isoformat()}
+
+    # Save last, best and delete
+    torch.save(ckpt, saved_model_path)
+    del ckpt
+
+    class Args:
+        def __init__(self,dataset_path,teacher_model,KD_epochs):
+            self.weights = saved_model_path
+            self.teacher_weight = teacher_model
+            self.cfg = ''
+            self.data = dataset_path + '/data.yaml'
+            self.hyp = 'Models/Input Models/hyp.scratch.tiny.yaml'
+            self.epochs = KD_epochs
+            self.batch_size = 1
+            self.imgsz = 640
+            self.rect = False
+            self.resume = False
+            self.nosave = False
+            self.noval = False
+            self.noautoanchor = False
+            self.noplots = False
+            self.evolve = None
+            self.bucket = ''
+            self.cache = 'ram'
+            self.image_weights = False
+            self.device = ''
+            self.multi_scale = False
+            self.single_cls = False
+            self.optimizer = 'SGD'
+            self.sync_bn = False
+            self.workers = 2
+            self.project = 'runs/train'
+            self.name = 'exp'
+            self.exist_ok = False
+            self.quad = False
+            self.cos_lr = False
+            self.label_smoothing = 0.0
+            self.patience = 100
+            self.freeze = [0]
+            self.save_period = -1
+            self.seed = 0
+            self.local_rank = -1
+            self.entity = None
+            self.upload_dataset = False
+            self.bbox_interval = -1
+            self.artifact_alias = 'latest'
+    args_dict =Args(dataset_path,teacher_model,KD_epochs)
+    train_yolov5_kd(args_dict)
+    model = load_pytorch_model('runs/train/exp', 'gpu', False,
+                                   yaml_path=dataset_path + '/data.yaml')
+
+    shutil.rmtree('runs/train/exp')
+    
+    return model
 
 def distill_model_pytorch(student_model, teacher_model, temperature, alpha, KD_epochs, device,train_loader, val_loader,is_yolo,logger):
     logger.info("\n\nStarting Knowledge Distillation\n")
     teacher_model.eval()
     student_model.train()
 
-    if is_yolo:
-        batch_size = 8  # Batch size for training
-        img_size = 640  # Input image size
-        nc = 52  # Number of classes
-        hyp_path = 'yolov5/data/hyps/hyp.scratch-low.yaml'
-        with open(hyp_path) as f:
-            yolo_hyp = yaml.load(f, Loader=yaml.SafeLoader)
     
-        yolo_hyp['label_smoothing'] = 0.0
-        student_model.nc = nc  # attach number of classes to model
-        student_model.hyp = yolo_hyp  # attach hyperparameters to model
-
-        teacher_model.nc = nc  # attach number of classes to model
-        teacher_model.hyp = yolo_hyp  # attach hyperparameters to model
-
-        # for param in teacher_model.parameters():
-        #     param.requires_grad = False
-        #
-        # from utils.general import non_max_suppression
-        #
-        # criterion = nn.KLDivLoss(reduction='batchmean')
-        # optimizer = optim.Adam(student_model.parameters(), lr=1e-3)
-        #
-        # for epoch in range(KD_epochs):
-        #     train_loss = 0.0
-        #     val_loss = 0.0
-        #
-        #     # mloss = torch.zeros(3, device=device)  # mean losses
-        #     pbar = tqdm(enumerate(train_loader), total=len(train_loader), bar_format=TQDM_BAR_FORMAT)
-        #     print(('\n' + '%11s' * 7) % ('Epoch', 'GPU_mem', 'box_loss', 'obj_loss', 'cls_loss', 'Instances', 'Size'))
-        #     for i, (imgs, targets, paths, _) in pbar:
-        #         inputs = imgs.to(device).float() / 255.0
-        #         targets = targets.to(device)
-        #         inputs, targets = inputs.to(device), targets.to(device)
-        #
-        #         optimizer.zero_grad()
-        #
-        #         with torch.no_grad():
-        #             teacher_outputs = teacher_model(inputs) #/ temperature
-        #             # teacher_outputs = non_max_suppression(teacher_outputs, conf_thres=0.001, iou_thres=0.6)[0]
-        #             teacher_outputs_clone = teacher_outputs#.clone()
-        #
-        #         student_outputs = student_model(inputs)  #/ temperature
-        #         # student_outputs = non_max_suppression(student_outputs, conf_thres=0.001, iou_thres=0.6)[0]
-        #         student_output_clone = student_outputs#.clone()
-        #
-        #         if teacher_outputs is None or student_outputs is None:
-        #             continue
-        #
-        #         # Compute loss for class probabilities
-        #         class_loss = criterion(F.log_softmax(student_output_clone[..., 5:], dim=-1), F.softmax(teacher_outputs_clone[..., 5:], dim=-1))
-        #         class_loss *= alpha * temperature * temperature
-        #
-        #         # Compute loss for bounding box coordinates
-        #         bbox_loss = criterion(student_output_clone[..., :4], teacher_outputs_clone[..., :4])
-        #         bbox_loss *= alpha * temperature * temperature
-        #
-        #         # Compute total loss
-        #         loss = class_loss + bbox_loss
-        #
-        #         loss.backward()
-        #         optimizer.step()
-        #
-        #         train_loss += loss.item()
-        #
-        #     train_loss /= len(train_loader)
-        #
-        #     with torch.no_grad():
-        #         for i, (inputs, targets, _) in enumerate(val_loader):
-        #             inputs, targets = inputs.to(device), targets.to(device)
-        #
-        #             teacher_outputs = teacher_model(inputs)
-        #             teacher_outputs = non_max_suppression(teacher_outputs, conf_thres=0.001, iou_thres=0.6)[0]
-        #
-        #             student_outputs = student_model(inputs)
-        #             student_outputs = non_max_suppression(student_outputs, conf_thres=0.001, iou_thres=0.6)[0]
-        #
-        #             if teacher_outputs is None or student_outputs is None:
-        #                 continue
-        #
-        #             # Compute loss for class probabilities
-        #             class_loss = criterion(F.log_softmax(student_outputs[..., 5:], dim=-1), F.softmax(teacher_outputs[..., 5:], dim=-1))
-        #             class_loss *= alpha * temperature * temperature
-        #
-        #             # Compute loss for bounding box coordinates
-        #             bbox_loss = criterion(student_outputs[..., :4], teacher_outputs[..., :4])
-        #             bbox_loss *= alpha * temperature * temperature
-        #
-        #             # Compute total loss
-        #             loss = class_loss + bbox_loss
-        #
-        #             val_loss += loss.item()
-        #
-        #         val_loss /= len(val_loader)
-        #
-        #     logger.info(f'Epoch {epoch + 1}/{KD_epochs}, Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}')
-
-        teacher_model.train()
-        dump_image = torch.zeros((1, 3, img_size, img_size), device=device)
-        targets = torch.Tensor([[0, 0, 0, 0, 0, 0]]).to(device)
-        _, features, _ = student_model(dump_image)  # forward
-        _, teacher_feature, _ = teacher_model(dump_image)
-
-        _, student_channel, student_out_size, _, _ = features.shape
-        _, teacher_channel, teacher_out_size, _, _ = teacher_feature.shape
-
-        stu_feature_adapt = nn.Sequential(
-            nn.Conv2d(student_channel, teacher_channel, 3, padding=1, stride=int(student_out_size / teacher_out_size)),
-            nn.ReLU()).to(device)
-
-        yolo_optimizer = torch.optim.SGD(student_model.parameters(), lr=yolo_hyp['lr0'], momentum=yolo_hyp['momentum'],
-                                         weight_decay=yolo_hyp['weight_decay'])
-        yolo_compute_loss = ComputeLoss(student_model)
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(yolo_optimizer, milestones=[round(yolo_hyp['lrf'] * 0.8),
-                                                                                     round(yolo_hyp['lrf'] * 0.9)],
-                                                         gamma=0.1)
-        
-        for epoch in range(KD_epochs):
-            teacher_model.eval()
-            student_model.train()
-            mloss = torch.zeros(3, device=device)  # mean losses
-            pbar = tqdm(enumerate(train_loader), total=len(train_loader), bar_format=TQDM_BAR_FORMAT)
-            print(('\n' + '%11s' * 7) % ('Epoch', 'GPU_mem', 'box_loss', 'obj_loss', 'cls_loss', 'Instances', 'Size'))
+    criterion = torch.nn.CrossEntropyLoss()
+    optimizer = torch.optim.SGD(student_model.parameters(), lr=0.001, momentum=0.9)
+    scheduler = lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.33)
+    for epoch in range(KD_epochs):
+        loss_sum = 0.0
+        for enum, (data, target) in enumerate(train_loader):
+            data, target = data.to(torch.device(device=device)), target.type(torch.LongTensor).to(torch.device(device=device))
             
-            for i, (imgs, targets, paths, _) in pbar:
-                imgs = imgs.to(device).float() / 255.0
-                targets = targets.to(device)
+            optimizer.zero_grad()
+            student_pred = student_model(data)
             
-                # Forward pass
-                pred, features, _ = student_model(imgs, target=targets)  # forward
-                _, teacher_feature, mask = teacher_model(imgs, target=targets)
-                loss, loss_items = yolo_compute_loss(pred, targets, teacher_feature.detach(), stu_feature_adapt(features),
-                                                mask.detach())  # loss scaled by batch_size
-
-                # Backward pass
-                loss.backward()
-            
-                # Optimize
-                yolo_optimizer.step()
-                yolo_optimizer.zero_grad()
-            
-                # Print progress
-                mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
-                mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
-                pbar.set_description(('%11s' * 2 + '%11.4g' * 5) %
-                                     (f'{epoch + 1}/{KD_epochs}', mem, *mloss, targets.shape[0], imgs.shape[-1]))
-                # print(f'Epoch {epoch}, Batch {batch_i}, Loss: {loss.item()}')
-            
-                # Update the learning rate
-            scheduler.step()
-    
-    else :
-        criterion = torch.nn.CrossEntropyLoss()
-        optimizer = torch.optim.SGD(student_model.parameters(), lr=0.001, momentum=0.9)
-        for epoch in range(KD_epochs):
-            loss_sum = 0.0
-            for enum, (data, target) in enumerate(train_loader):
-                data, target = data.to(torch.device(device=device)), target.type(torch.LongTensor).to(torch.device(device=device))
-                
-                optimizer.zero_grad()
-                student_pred = student_model(data)
-                
-                with torch.no_grad():
-                    teacher_pred = teacher_model(data)
-    
-                # student_loss_sum = 0.0
-                # teacher_loss_sum = 0.0
-                student_loss = criterion(student_pred, target)
-                # for teacher_pred, target_pred, student_pred in zip(teacher_output, target, output):
-                #     student_loss_sum += nn.functional.cross_entropy(student_pred, target_pred)
-                #     _, student_pred = torch.max(student_pred, 0)
-                #     _, teacher_pred = torch.max(teacher_pred, 0)
-                teacher_loss = nn.KLDivLoss()(F.log_softmax(student_pred/temperature, dim=0),
-                                 F.softmax(teacher_pred/temperature, dim=0)) * ( temperature * temperature)
-    
-                # student_loss = student_loss_sum / data.size(0)
-                # teacher_loss = teacher_loss_sum / data.size(0)
-                
-                loss = alpha * student_loss + (1 - alpha) * teacher_loss
-                loss_sum += loss.item()
-                loss.backward()
-                optimizer.step()
-                if (enum + 1) % 100 == 0:
-                    print(
-                        f'KD Epoch {epoch + 1} / {KD_epochs} : {enum + 1} / {len(train_loader)} | batch loss : {loss:.4f} | average loss : {loss_sum / (enum + 1):.4f}')
-    
-            student_model.eval()
-            total_correct = 0
-            total_samples = 0
             with torch.no_grad():
-                for inputs, labels in val_loader:
-                    inputs, labels = inputs.to('cuda'), labels.to('cuda')
-                    outputs = student_model(inputs)
-                    _, predicted = torch.max(outputs, dim=1)
-                    total_correct += (predicted == labels).sum().item()
-                    total_samples += inputs.size(0)
-            val_accuracy = total_correct / total_samples
-            print(f'KD Epoch {epoch + 1}, Validation Accuracy: {val_accuracy * 100:.2f} %')
-            logger.info(f'KD Epoch {epoch + 1}, Validation Accuracy: {val_accuracy * 100:.2f} %')
-            student_model.train()
+                teacher_pred = teacher_model(data)
+
+            student_loss = criterion(student_pred, target)
+            teacher_loss = nn.KLDivLoss()(F.log_softmax(student_pred/temperature, dim=1),
+                             F.softmax(teacher_pred/temperature, dim=1)) * ( temperature * temperature)
+            
+            loss = alpha * student_loss + (1 - alpha) * teacher_loss
+            loss_sum += loss.item()
+            loss.backward()
+            optimizer.step()
+            if (enum + 1) % 100 == 0:
+                print(
+                    f'KD Epoch {epoch + 1} / {KD_epochs} : {enum + 1} / {len(train_loader)} | batch loss : {loss:.4f} | average loss : {loss_sum / (enum + 1):.4f}')
+
+        student_model.eval()
+        total_correct = 0
+        total_samples = 0
+        with torch.no_grad():
+            for inputs, labels in val_loader:
+                inputs, labels = inputs.to('cuda'), labels.to('cuda')
+                outputs = student_model(inputs)
+                _, predicted = torch.max(outputs, dim=1)
+                total_correct += (predicted == labels).sum().item()
+                total_samples += inputs.size(0)
+        val_accuracy = total_correct / total_samples
+
+        scheduler.step()
+        
+        print(f'KD Epoch {epoch + 1}, Validation Accuracy: {val_accuracy * 100:.2f} %')
+        logger.info(f'KD Epoch {epoch + 1}, Validation Accuracy: {val_accuracy * 100:.2f} %')
+        student_model.train()
         
     return student_model
 

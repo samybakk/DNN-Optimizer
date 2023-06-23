@@ -1,6 +1,7 @@
 import sys
 
 sys.path.insert(0, './yolov5')
+sys.path.insert(0,'./yolov5-knowledge-distillation')
 import argparse
 from Model_utils import *
 from Worker import worker
@@ -60,6 +61,8 @@ def arg_parser():
                         help='whether to use the compressed model for training')
     parser.add_argument('--Alpha', type=float, default=0.8,
                         help='alpha for Knowledge Distillation')
+    parser.add_argument('--half', type=bool, default=False,
+                        help='whether to use half precision')
     parser.add_argument('--device', type=str, default='cuda',
                         help='device to run the optimization on')
     parser.add_argument('--framework', type=str, default='torch',
@@ -85,39 +88,36 @@ def run(opt):
               'save_unziped': opt.SaveUnziped,
               'convert_tflite': opt.ConvertTFLite,
               'Compressed': opt.Compressed, 'KD_alpha': opt.Alpha,
-              'KD_epochs': opt.KDEpochs, 'device': 'cpu',
+              'KD_epochs': opt.KDEpochs, 'device': opt.device, 'half' : opt.half,
               'framework': opt.framework}
 
     worker(dictio)
     
     # index = 0
-    # prs = [2,5,8]
-    # pms = ['global_dynamic_pruning']
+    # prl = [0.2,0.4,0.6,0.8,0.9]
+    # for pr in prl :
+    #     sn = f'tf_resnet50_{pr}'
+    #     dictio = {'model_path': opt.current_model_path,
+    #               'Pruning': opt.Pruning,
+    #               'Quantization': opt.Quantization,
+    #               'Knowledge_Distillation': opt.Knowledge_Distillation, 'batch_size': opt.batch_size,
+    #               'pruning_ratio': opt.PruningRatio, 'dataset_path': opt.current_dataset_path,
+    #               'train_fraction': opt.train_fraction, 'validation_fraction': opt.validation_fraction,
+    #               'pruning_epochs': opt.PruningEpochs,
+    #               'pruning_type': opt.PruningType,
+    #               'pruning_args': opt.PruningArgs,
+    #               'desired_format': opt.DesiredFormat,
+    #               'teacher_model_path': opt.Teacher_Model_Path,
+    #               'KD_temperature': opt.Temperature, 'save_name': opt.save_name,
+    #               'save_unziped': opt.SaveUnziped,
+    #               'convert_tflite': opt.ConvertTFLite,
+    #               'Compressed': opt.Compressed, 'KD_alpha': opt.Alpha,
+    #               'KD_epochs': opt.KDEpochs, 'device': opt.device, 'half': opt.half,
+    #               'framework': opt.framework}
     #
-    # for pm in pms :
-    #     for pr in prs:
-    #         sn = f'Resnet50_{pm}_ratio_{pr/10}_{opt.PruningArgs}_epochs_5'
-    #         dictio = {'model_path': opt.current_model_path,
-    #                   'Pruning': opt.Pruning,
-    #                   'Quantization': opt.Quantization,
-    #                   'Knowledge_Distillation': opt.Knowledge_Distillation, 'batch_size': opt.batch_size,
-    #                   'pruning_ratio': pr/10, 'dataset_path': opt.current_dataset_path,
-    #                   'train_fraction': opt.train_fraction, 'validation_fraction': opt.validation_fraction,
-    #                   'pruning_epochs': 5,
-    #                   'pruning_type': pm,
-    #                   'pruning_args': opt.PruningArgs,
-    #                   'desired_format': opt.DesiredFormat,
-    #                   'teacher_model_path': opt.Teacher_Model_Path,
-    #                   'KD_temperature': opt.Temperature, 'save_name': sn,
-    #                   'save_unziped': opt.SaveUnziped,
-    #                   'convert_tflite': opt.ConvertTFLite,
-    #                   'Compressed': opt.Compressed, 'KD_alpha': opt.Alpha,
-    #                   'KD_epochs': opt.KDEpochs, 'device': opt.device,
-    #                   'framework': opt.framework}
-    #
-    #         print('\n\nNew Process | index : ',index)
-    #         worker(dictio)
-    #         index += 1
+    #     print('\n\nNew Process | index : ',index)
+    #     worker(dictio)
+    #     index += 1
 
 
 if __name__ == "__main__":
