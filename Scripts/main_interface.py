@@ -3,7 +3,7 @@ import os
 import sys,logging
 
 sys.path.insert(0, './yolov5')
-
+sys.path.insert(0,'./yolov5-knowledge-distillation')
 from PyQt5 import QtWidgets, uic
 from PyQt5.QtWidgets import QMainWindow,QApplication,QFileDialog,QTextEdit,QPlainTextEdit,QPushButton,QRadioButton,QComboBox,QSpinBox,QDoubleSpinBox,QTreeView,QFileSystemModel
 from PyQt5.QtCore import  QThread, pyqtSignal,QDir,QSortFilterProxyModel,QThreadPool,Qt
@@ -40,6 +40,23 @@ class Ui(QMainWindow):
         self.Pruning = self.findChild(QRadioButton, 'Pruning')
         self.Distilled_Knowledge = self.findChild(QRadioButton, 'Distilled_Knowledge')
         self.Process = self.findChild(QPushButton, 'Process')
+
+        self.pruning_typeCB = self.findChild(QComboBox, 'PruningTypeCB')
+        self.pruning_typeCB.addItems(['random_unstructured_pruning','random_structured_pruning',
+                                      'magnitude_pruning','dynamic_pruning',
+                                      'global_pruning','global_dynamic_pruning'])
+        
+        self.QTypeCB = self.findChild(QComboBox, 'QTypeCB')
+        self.QTypeCB.addItems(['Static','Dynamic','Quantization Aware Training'])
+
+        self.QuantizationEpochsSB = self.findChild(QSpinBox, 'QuantizationEpochsSB')
+
+        self.BatchSizeSB = self.findChild(QSpinBox, 'BatchSizeSB')
+        
+        self.TrainFractionSB = self.findChild(QDoubleSpinBox, 'TrainFractionSB')
+        self.ValFractionSB = self.findChild(QDoubleSpinBox, 'ValFractionSB')
+
+        self.HalfRB = self.findChild(QRadioButton, 'Half')
 
         self.DesiredFormatCB = self.findChild(QComboBox, 'DesiredFormatCB')
         self.DesiredFormatCB.addItems(['int8','int16','int32','float16','float32'])
@@ -87,7 +104,6 @@ class Ui(QMainWindow):
         self.worker_id_counter = 0
         self.worker_dict = {}
 
-        # self.device = 'cpu'
         if torch.cuda.is_available():
             self.device = 'cuda'
             print('Using GPU')
@@ -95,7 +111,6 @@ class Ui(QMainWindow):
             self.device = 'cpu'
             print('Using CPU')
         
-        # self.device = 'cpu'
         self.show()
         
     def Database_browsing(self):
@@ -196,14 +211,15 @@ class Ui(QMainWindow):
             dictio = {'console': self.Console, 'model_path': self.current_model_path,
                       'Pruning': self.Pruning.isChecked(),
                       'Quantization': self.Quantaziation.isChecked(),
-                      'Knowledge_Distillation': self.Distilled_Knowledge.isChecked(), 'batch_size': 2,
+                      'Knowledge_Distillation': self.Distilled_Knowledge.isChecked(), 'batch_size':self.BatchSizeSB.value(),
                       'pruning_ratio': self.PruningRatioSB.value(), 'dataset_path': self.current_dataset_path,
-                      'train_fraction': 0.01, 'validation_fraction': 0.1,
-                      # 'train_fraction': self.TrainFractionSB.value(), 'validation_fraction': self.ValidationFractionSB.value(),
+                      'half' : self.HalfRB.isChecked(),
+                      'train_fraction': self.TrainFractionSB.value(), 'validation_fraction': self.ValFractionSB.value(),
                       'pruning_epochs': self.PruningEpochsSB.value(),
-                      'pruning_type' : 'dynamic_pruning',
-                      'pruning_args' : 'magnitude',
+                      'pruning_type' : self.pruning_typeCB.currentText(),
                       'desired_format': self.DesiredFormatCB.currentText(),
+                      'quantization_type' : self.QTypeCB.currentText(),
+                      'quantization_epochs': self.QuantizationEpochsSB.value(),
                       'teacher_model_path': self.Teacher_Model_Path.toPlainText(),
                       'KD_temperature': self.TemperatureSB.value(), 'save_name': save_name,
                       'save_unziped': self.SaveUnzipedRB.isChecked(),
@@ -214,78 +230,20 @@ class Ui(QMainWindow):
 
             worker = Worker(dictio, worker_id)
             self.worker_dict[worker_id] = worker
-            # worker.finished.connect(self.handle_thread_finished, Qt.QueuedConnection)
             self.threadpool.start(worker)
             
-            # list_dictio = []
-            # for pr in range(6,9,1) :
-            #     for kdt in range(6,10,1) :
-            #         dictio = {'console': self.Console, 'model_path': self.current_model_path, 'Pruning': self.Pruning.isChecked(),
-            #               'Quantization': self.Quantaziation.isChecked(), 'Knowledge_Distillation': self.Distilled_Knowledge.isChecked(), 'batch_size': 8,
-            #               'pruning_ratio': pr/10,'dataset_path':self.current_dataset_path,
-            #               'train_fraction': 1, 'validation_fraction': 1,
-            #               # 'train_fraction': self.TrainFractionSB.value(), 'validation_fraction': self.ValidationFractionSB.value(),
-            #               'pruning_epochs': int(pr/2), 'desired_format': self.DesiredFormatCB.currentText(),
-            #               'teacher_model_path': self.Teacher_Model_Path.toPlainText(),
-            #               'KD_temperature': kdt, 'save_name': f'Resnet50-pruningepochs-{int(pr/2)}-pruningratio-{pr/10}-kdtemp-{kdt}-kdalpha-{0.7}-kdepochs-{int(kdt/2)}',
-            #               'save_unziped': self.SaveUnzipedRB.isChecked(),
-            #               'convert_tflite': self.ConvertTFLiteRB.isChecked(),
-            #               'Compressed': self.CompressedRB.isChecked(), 'KD_alpha': 0.7,
-            #               'KD_epochs': int(kdt/2),'device':self.device, 'PWInstance': progresswindow,'framework':framework}
-            #
-            #         list_dictio.append(dictio)
-            # finished = False
-            # index = 0
-            # while finished == False :
-            #
-            #     if self.threadpool.activeThreadCount() == 0 :
-            #         print('\n\nNew Process | index : ',index)
-            #         worker = Worker(list_dictio[index],index)
-            #         self.worker_dict[index] = worker
-            #         worker.signals.finished.connect(self.handle_thread_finished, Qt.QueuedConnection)
-            #         self.threadpool.start(worker)
-            #         index += 1
-            #     if index == len(list_dictio) :
-            #         finished = True
+            
 
-    def handle_thread_error(self, error_message):
-        # self.sender().thread().quit()  # Close the thread
-        # self.sender().thread().deleteLater()
-        # self.sender().deleteLater()
-        #self.progresswindow.close()
-        print("Error occurred in the thread:", error_message)
-
-    def handle_thread_finished(self,progresswindow):
-        # thread = self.sender().thread()
-        # worker = self.sender()
-    
-        print("Thread finished")
-        progresswindow.close()
-    
-        # self.threads.remove(thread)
-        # self.workers.remove(worker)
-        #
-        # thread.deleteLater()
-        # worker.deleteLater()
-         
     def updateConsole(self,string):
         self.Console.appendPlainText(string)
 
     def create_progressWindow(self,model_path,save_directory,worker_id):
         model_disk_space = os.stat(model_path).st_size / (1024 * 1024)
         progresswindow = ProgressWindow(model_disk_space,save_directory,worker_id)
-        progresswindow.windowClosed.connect(self.stop_thread)#(worker_id))
         progresswindow.show()
         return progresswindow
     
-    def stop_thread(self, worker_id):
-        # Get the associated Worker instance
-        # worker = self.worker_dict.pop(worker_id, None)
-        # print(f'worker : {worker}')
-        # if worker:
-        #     # Stop the thread associated with the Worker
-        #     self.threadpool.cancel(worker)
-        pass
+    
         
 if __name__ == "__main__":
     app = QApplication(sys.argv)

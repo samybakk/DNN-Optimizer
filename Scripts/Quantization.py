@@ -1,4 +1,5 @@
 import tensorflow.lite as tflite
+import torch
 import torchvision.models.quantization
 from typing import Type, Any, Callable, Union, List, Optional
 
@@ -293,124 +294,120 @@ class QuantizedModel(nn.Module):
         self.model = model
         self.dequant = torch.quantization.DeQuantStub()
         
-        # self.names = model.names
-        # self.model.nc = model.model.nc
-        # Transfer all attributes from the original model
-        # for attr_name in dir(model):
-        #     attr_value = getattr(model, attr_name)
-        #     if not callable(attr_value) and not attr_name.startswith('__'):
-        #         print('attribute :',attr_name, attr_value)
-        #         setattr(self, attr_name, attr_value)
     
     def forward(self, x):
         x = self.quant(x)
         x = self.model(x)
         x = self.dequant(x)
         return x
-
-
-def quantize_model_pytorch(model, desired_format, device, train_loader, logger):
+    
+def dynamic_quantize_model_pytorch(model, desired_format, device,logger):
     logger.info('\n\nQuantizing the model\n')
     if desired_format == 'int8':
         desired_format = torch.qint8
     elif desired_format == 'uint8':
         desired_format = torch.quint8
-    elif desired_format == 'int16':
-        desired_format = torch.float16
         print('int16 not available for pytorch | using float16 instead')
     elif desired_format == 'int32':
-        desired_format = torch.qint32
+        desired_format = torch.int32
     elif desired_format == 'float16':
         desired_format = torch.float16
     else:
         desired_format = torch.float32
     
-    if True:
-        torch_quant_model = resnet50_quantizable(num_classes=10).to('cpu')
-        torch_quant_model.load_state_dict(model.state_dict())
-        torch_quant_model.eval()
-        module_names = []
+    
+    torch_quant_model = torch.ao.quantization.quantize_dynamic(model, {nn.Linear, nn.Conv2d}, dtype=desired_format).cpu()
+
+    return torch_quant_model
+
+def static_quantize_model_pytorch(model, desired_format, device, train_loader,quant_epochs, logger):
+    logger.info('\n\nQuantizing the model\n')
+    if desired_format == 'int8':
+        desired_activation_format = torch.quint8
+        desired_weight_format = torch.qint8
+    elif desired_format == 'uint8':
+        desired_activation_format = torch.quint8
+        desired_weight_format = torch.qint8
+    elif desired_format == 'int32':
+        desired_activation_format = torch.int32
+        desired_weight_format = torch.int32
+    elif desired_format == 'float16':
+        desired_activation_format = torch.float16
+        desired_weight_format = torch.float16
+    else:
+        desired_activation_format = torch.float32
+        desired_weight_format = torch.float32
+
+    
+    torch_quant_model = resnet50_quantizable(num_classes=10).to('cpu')
+    torch_quant_model.load_state_dict(model.state_dict())
+    torch_quant_model.eval()
+    module_names = []
+    is_previous_conv = False
+
+    for name, module in torch_quant_model.named_modules():
+        if isinstance(module, torch.nn.Conv2d):
+            module_names.append(name)
+            is_previous_conv = True
+            continue
+    
+        if is_previous_conv and isinstance(module, torch.nn.BatchNorm2d):
+            module_names.append(name)
+    
         is_previous_conv = False
-        
-        for name, module in torch_quant_model.named_modules():
-            if isinstance(module, torch.nn.Conv2d):
-                module_names.append(name)
-                is_previous_conv = True
-                continue
-            
-            if is_previous_conv and isinstance(module, torch.nn.BatchNorm2d):
-                module_names.append(name)
-            
-            is_previous_conv = False
-        
-        modules_to_fuse = []
-        for i in range(0, len(module_names) - 1, 2):
-            modules_to_fuse.append([module_names[i], module_names[i + 1]])
-        
-        torch_quant_model = torch.quantization.fuse_modules(torch_quant_model, modules_to_fuse)
-        qconfig = torch.quantization.get_default_qconfig('fbgemm')
-        custom_qconfig = torch.quantization.QConfig(
-            activation=MinMaxObserver.with_args(dtype=desired_format),
-            weight=torch.quantization.default_per_channel_weight_observer.with_args(dtype=desired_format)
-        )
-        torch_quant_model.qconfig = custom_qconfig
-        
-        torch.quantization.prepare(torch_quant_model, inplace=True)
-        torch_quant_model.eval()
-        
-        with torch.no_grad():
+
+    modules_to_fuse = []
+    for i in range(0, len(module_names) - 1, 2):
+        modules_to_fuse.append([module_names[i], module_names[i + 1]])
+
+    torch_quant_model = torch.quantization.fuse_modules(torch_quant_model, modules_to_fuse)
+    custom_qconfig = torch.quantization.QConfig(
+        activation=MinMaxObserver.with_args(dtype=desired_activation_format),
+        weight=torch.quantization.default_per_channel_weight_observer.with_args(dtype=desired_weight_format)
+    )
+    torch_quant_model.qconfig = custom_qconfig
+
+    torch.quantization.prepare(torch_quant_model, inplace=True)
+    torch_quant_model.eval()
+
+    with torch.no_grad():
+        for epoch in range(quant_epochs) :
             for enum, (data, target) in enumerate(train_loader):
                 data, target = data.to(device), target.to(device)
                 torch_quant_model(data)
                 if (enum + 1) % 100 == 0:
                     print(
-                        f'Quantization  Observer : {enum + 1} / {len(train_loader)}')
-        
-        torch.quantization.convert(torch_quant_model, inplace=True)
-    
-    elif device == 'cpu' or True:
-        torch_quant_model = quantization.quantize_dynamic(model, {nn.Linear, nn.Conv2d}, dtype=desired_format).cpu()
-        # torch_quant_model = QuantizedModel(torch_quant_model).to(device)
-    else:
-        
-        # Create a quantized model
-        model = QuantizedModel(model.to(device))
-        
-        model.eval()
-        
-        # Define the quantization configuration
-        quantization_scheme = 'x86'  # only int8 for now
-        qconfig = torch.quantization.get_default_qconfig(quantization_scheme)
-        model.qconfig = qconfig
-        
-        # Prepare and convert the model for quantization
-        torch.quantization.prepare(model, inplace=True)
-        torch.quantization.convert(model, inplace=True)
-        torch_quant_model = model.to(device)
-        
-        # torch_quant_model = torchvision.models.quantization.resnet50(quantize=True).to(device)
-    
+                        f'Quantization  Observer epoch {epoch+1}/{quant_epochs} : {enum + 1} / {len(train_loader)}')
+
+    torch.quantization.convert(torch_quant_model, inplace=True)
+
+
     return torch_quant_model
 
 
 def quantization_aware_training_pytorch(model, train_loader, val_loader, device, num_epochs, logger):
     optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
     criterion = torch.nn.CrossEntropyLoss()
-    model.eval()
-    fused_model = torch.quantization.fuse_modules(model, [["conv1", "bn1", "relu"]], inplace=True)
-    for module_name, module in fused_model.named_children():
-        if "layer" in module_name:
-            for basic_block_name, basic_block in module.named_children():
-                torch.quantization.fuse_modules(basic_block, [["conv1", "bn1", "relu"], ["conv2", "bn2"]],
-                                                inplace=True)
-                for sub_block_name, sub_block in basic_block.named_children():
-                    if sub_block_name == "downsample":
-                        torch.quantization.fuse_modules(sub_block, [["0", "1"]], inplace=True)
-    quant_model = QuantizedModel(fused_model).to(device)
-    if device == 'cuda':
-        quant_model.qconfig = torch.quantization.get_default_qat_qconfig('fbgemm')  # onednn
-    else:
-        quant_model.qconfig = torch.quantization.get_default_qat_qconfig('fbgemm')
+    quant_model = QuantizedModel(model).to(device)
+    quant_model.eval()
+    # fused_model = torch.quantization.fuse_modules(model, [["conv1", "bn1", "relu"]], inplace=True)
+    # for module_name, module in fused_model.named_children():
+    #     if "layer" in module_name:
+    #         for basic_block_name, basic_block in module.named_children():
+    #             torch.quantization.fuse_modules(basic_block, [["conv1", "bn1", "relu"], ["conv2", "bn2"]],
+    #                                             inplace=True)
+    #             for sub_block_name, sub_block in basic_block.named_children():
+    #                 if sub_block_name == "downsample":
+    #                     torch.quantization.fuse_modules(sub_block, [["0", "1"]], inplace=True)
+    
+    
+    
+    
+    
+    quant_model.qconfig = torch.quantization.get_default_qat_qconfig('x86')
+
+    quant_model = torch.ao.quantization.fuse_modules(quant_model,
+                                                          [['conv', 'bn', 'relu']])
     
     quant_model = torch.quantization.prepare_qat(quant_model.train(), inplace=True)
     
@@ -458,7 +455,7 @@ def quantization_aware_training_pytorch(model, train_loader, val_loader, device,
             f'Quantization | Validation loss : {val_loss:.4f} | validation accuracy : {val_accuracy * 100:.2f} %')
     
     quant_model.eval()
-    final_quant_model = torch.quantization.convert(quant_model.eval(), inplace=True)
+    final_quant_model = torch.ao.quantization.convert(quant_model.eval(), inplace=True)
     # model = torch.ao.quantization.convert(model.eval(),inplace=True)
     final_quant_model.to(device)
     

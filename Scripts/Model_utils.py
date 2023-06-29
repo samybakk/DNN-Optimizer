@@ -41,10 +41,9 @@ def test_model_size(model, saved_model_path, device):
     return object_size_mb, gpu_model_memory_mb, disk_size_mb
 
 
-def load_pytorch_model(model_path, device, yaml_path=None, exclude=[]):
-    if 'vgg16' in model_path.split(os.sep)[-1]:
-        print(f'Loading VGG16 model at {model_path}')
-        model_dict = torch.load(model_path, map_location='cpu')
+def load_pytorch_model(model_dict, device,model_name,number_of_classes=10):
+    if 'vgg16' in model_name:
+        print(f'Loading VGG16 model')
         number_of_classes = [x for x in model_dict['state_dict'].values()][-1].shape[0]
         model = vgg16()
         num_features = model.classifier[0].in_features
@@ -60,28 +59,20 @@ def load_pytorch_model(model_path, device, yaml_path=None, exclude=[]):
         model.load_state_dict(model_dict['state_dict'])
         del model_dict
         imgsz = 32
-        # model = model['model']
-        # for m in model.modules():
-        #     if type(m) in [nn.Hardswish, nn.LeakyReLU, nn.ReLU, nn.ReLU6, nn.SiLU]:
-        #         m.inplace = True  # pytorch 1.7.0 compatibility
-        #     elif type(m) is nn.Upsample:
-        #         m.recompute_scale_factor = None  # torch 1.11.0 compatibility
+        
+        
     
-    elif 'resnet50' in model_path.split(os.sep)[-1]:
-        print(f'Loading Resnet50 model at {model_path}')
-        model_dict = torch.load(model_path, map_location='cpu')
+    elif 'resnet50' in model_name:
+        print(f'Loading Resnet50 model')
         number_of_classes = [x for x in model_dict['state_dict'].values()][-1].shape[0]
         model = resnet50()
         model.fc = torch.nn.Linear(model.fc.in_features, number_of_classes)
         model.load_state_dict(model_dict['state_dict'])
         del model_dict
-        imgsz = 28
     
-    elif 'yolo' in model_path.split(os.sep)[-1]:
-        print(f'Loading YOLO model at {model_path}')
-        # model = DetectMultiBackend(model_path, device=torch.device(device), dnn=False, data=yaml_path, fp16=False)
+    elif 'yolo' in model_name:
+        print(f'Loading YOLO model')
         resume = True
-        nc = 52
         
         yolo_hyp = {'giou': 3.54, 'cls': 1.0, 'cls_pw': 0.5, 'obj': 64.3, 'obj_pw': 1.0, 'iou_t': 0.225,
                     'lr0': 0.01,
@@ -89,16 +80,20 @@ def load_pytorch_model(model_path, device, yaml_path=None, exclude=[]):
                     'momentum': 0.937, 'weight_decay': 0.0005, 'fl_gamma': 0.0, 'hsv_h': 0.0138, 'hsv_s': 0.664,
                     'hsv_v': 0.464}
         
-        ckpt = torch.load(model_path, map_location='cpu')  # load checkpoint to CPU to avoid CUDA memory leak
         print('ckpt.keys() :')
-        for x in ckpt.keys():
+        for x in model_dict.keys():
             print(x)
-        ckpt['model'].model.nc = nc  # set nc to 80
-        model = Model(ckpt['model'].yaml, ch=3, nc=nc, anchors=yolo_hyp.get('anchors')).to(device)  # create
-        exclude = ['anchor'] if (yolo_hyp.get('anchors')) and not resume else []  # exclude keys
-        csd = ckpt['model'].float().state_dict()  # checkpoint state_dict as FP32
-        csd = intersect_dicts(csd, model.state_dict(), exclude=exclude)  # intersect
+        model_dict['model'].model.nc = number_of_classes
+        model = Model(model_dict['model'].yaml, ch=3, nc=number_of_classes, anchors=yolo_hyp.get('anchors')).to(device)  # create
+        csd = model_dict['model'].float().state_dict()  # checkpoint state_dict as FP32
+        csd = intersect_dicts(csd, model.state_dict(), exclude=[])  # intersect
         model.load_state_dict(csd, strict=False)  # load
+    
+    else:
+        print(f'Model architecture not detected. Please check that the model path contains the name of the model and that the model classification is present in Scripts/Model_utils.py.')
+        model = None
+        
+    
     
     model = model.to(device)
     print(f'Loaded model on {device}')
@@ -109,26 +104,3 @@ def load_tensorflow_model(model_path):
     model = tf.keras.models.load_model(model_path)
     return model
 
-# def convert_model_to_trt():
-#     # Step 3: Convert the PyTorch model to TensorRT
-#     trt_logger = trt.Logger(trt.Logger.WARNING)
-#
-#     # Create a TensorRT builder and network
-#     trt_builder = trt.Builder(trt_logger)
-#     trt_network = trt_builder.create_network()
-#
-#     # Configure optimization parameters
-#     trt_builder.max_batch_size = 1
-#     trt_builder.max_workspace_size = 1 << 30  # 1GB
-#
-#     # Convert the PyTorch model to TensorRT
-#     trt_converter = trt.pytorch.PyTorchConverter(trt_builder, trt_logger)
-#     trt_engine = trt_converter.convert(model)
-#
-#     # Step 4: Serialize and save the TensorRT engine
-#     trt_engine_path = 'path/to/save/tensorrt/engine.trt'
-#     trt_serialized_engine = trt_engine.serialize()
-#     with open(trt_engine_path, 'wb') as f:
-#         f.write(trt_serialized_engine)
-#
-#     print('TensorRT engine is saved successfully!')

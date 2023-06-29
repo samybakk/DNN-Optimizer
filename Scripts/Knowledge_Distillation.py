@@ -1,6 +1,17 @@
+from copy import deepcopy
+from datetime import datetime
+
+from torch.optim import lr_scheduler
+from tqdm import tqdm
+import shutil
+
 from Distiller import *
 from Dataset_utils import *
 import torch.nn.functional as F
+
+from utils.loss import ComputeLoss
+from utils.torch_utils import de_parallel, ModelEMA
+from train import main as train_yolov5_kd
 
 
 def distill_model_tensorflow(model, teacher_model, dataset_path, batch_size, temperature, alpha, epochs, PWInstance,logger):
@@ -26,13 +37,89 @@ def distill_model_tensorflow(model, teacher_model, dataset_path, batch_size, tem
     return model
 
 
+def distill_model_yolo(student_model, teacher_model, dataset_path, KD_epochs, logger):
+    logger.info("\n\nStarting Knowledge Distillation\n")
+    
+    yolo_optimizer = torch.optim.SGD(student_model.parameters(), 0.01,
+                                     momentum=0.937,
+                                     weight_decay=0.0005)
+    ema = ModelEMA(student_model)
+    save_name = 'kd'
+    saved_model_path = 'Models' + os.sep + 'Temp' + os.sep + save_name + '.pt'
+    ckpt = {
+        'epoch': 0,
+        'best_fitness': 0,
+        'model': deepcopy(de_parallel(student_model)).half(),
+        'ema': deepcopy(ema.ema).half(),
+        'updates': ema.updates,
+        'optimizer': yolo_optimizer.state_dict(),
+        'opt': None,
+        'git': None,  # {remote, branch, commit} if a git repo
+        'date': datetime.now().isoformat()}
+    
+    # Save last, best and delete
+    torch.save(ckpt, saved_model_path)
+    del ckpt
+    
+    class Args:
+        def __init__(self, dataset_path, teacher_model, KD_epochs):
+            self.weights = saved_model_path
+            self.teacher_weight = teacher_model
+            self.cfg = ''
+            self.data = dataset_path + '/data.yaml'
+            self.hyp = 'Models/Input Models/hyp.scratch.tiny.yaml'
+            self.epochs = KD_epochs
+            self.batch_size = 1
+            self.imgsz = 640
+            self.rect = False
+            self.resume = False
+            self.nosave = False
+            self.noval = False
+            self.noautoanchor = False
+            self.noplots = False
+            self.evolve = None
+            self.bucket = ''
+            self.cache = 'ram'
+            self.image_weights = False
+            self.device = ''
+            self.multi_scale = False
+            self.single_cls = False
+            self.optimizer = 'SGD'
+            self.sync_bn = False
+            self.workers = 2
+            self.project = 'runs/train'
+            self.name = 'exp'
+            self.exist_ok = False
+            self.quad = False
+            self.cos_lr = False
+            self.label_smoothing = 0.0
+            self.patience = 100
+            self.freeze = [0]
+            self.save_period = -1
+            self.seed = 0
+            self.local_rank = -1
+            self.entity = None
+            self.upload_dataset = False
+            self.bbox_interval = -1
+            self.artifact_alias = 'latest'
+    
+    args_dict = Args(dataset_path, teacher_model, KD_epochs)
+    train_yolov5_kd(args_dict)
+    model = load_pytorch_model('runs/train/exp', 'gpu', False,
+                               yaml_path=dataset_path + '/data.yaml')
+    
+    shutil.rmtree('runs/train/exp')
+    
+    return model
+
+
 def distill_model_pytorch(student_model, teacher_model, temperature, alpha, KD_epochs, device,train_loader, val_loader, PWInstance,logger):
     logger.info("\n\nStarting Knowledge Distillation\n")
-    teacher_model.train()
+    teacher_model.eval()
     student_model.train()
 
     criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.SGD(student_model.parameters(), lr=0.001, momentum=0.9)
+    optimizer = torch.optim.SGD(student_model.parameters(), lr=0.00000001, momentum=0.9)
     plotdk = PTPlotDK(PWInstance)
     for epoch in range(KD_epochs):
         loss_sum = 0.0
