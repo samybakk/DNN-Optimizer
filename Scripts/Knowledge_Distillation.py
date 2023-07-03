@@ -35,9 +35,10 @@ def distill_model_tensorflow(model, teacher_model, dataset_path, batch_size, tem
     print('Evaluating the distilled model')
     distiller.evaluate(test_data, test_labels)
     return model
+    # return model.student
 
 
-def distill_model_yolo(student_model, teacher_model, dataset_path, KD_epochs, logger):
+def distill_model_yolo(student_model, teacher_model, dataset_path, KD_epochs, logger,nbr_classes):
     logger.info("\n\nStarting Knowledge Distillation\n")
     
     yolo_optimizer = torch.optim.SGD(student_model.parameters(), 0.01,
@@ -67,7 +68,7 @@ def distill_model_yolo(student_model, teacher_model, dataset_path, KD_epochs, lo
             self.teacher_weight = teacher_model
             self.cfg = ''
             self.data = dataset_path + '/data.yaml'
-            self.hyp = 'Models/Input Models/hyp.scratch.tiny.yaml'
+            self.hyp = 'yolov5/data/hyps/hyp.no-augmentation.yaml'
             self.epochs = KD_epochs
             self.batch_size = 1
             self.imgsz = 640
@@ -107,6 +108,9 @@ def distill_model_yolo(student_model, teacher_model, dataset_path, KD_epochs, lo
     train_yolov5_kd(args_dict)
     model = load_pytorch_model('runs/train/exp', 'gpu', False,
                                yaml_path=dataset_path + '/data.yaml')
+    model_dict = torch.load('runs/train/exp', map_location='cpu')
+    model_name = saved_model_path.split(os.sep)[-1]
+    model = load_pytorch_model(model_dict, 'gpu', model_name, number_of_classes=nbr_classes)
     
     shutil.rmtree('runs/train/exp')
     

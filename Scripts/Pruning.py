@@ -1,44 +1,30 @@
 import torch.nn
 import torch.nn.utils.prune as prune
-import numpy as np
-from tensorflow_model_optimization.python.core.sparsity.keras.pruning_schedule import ConstantSparsity
 from torch.optim import lr_scheduler
-
-from utilities import *
 from Dataset_utils import *
-import tempfile
 import tensorflow as tf
 import tensorflow_model_optimization as tfmot
 from utils.loss import ComputeLoss
 
 
-# a function that takes a tensorflow model and returns a pruned version of it using pruning_ratio as the pruning ratio without re-training the model and without data
-def basic_prune_model_tensorflow(model, pruning_ratio, logger):
-    # Get weights of the model
-    weights = model.get_weights()
+
+def basic_prune_model_tensorflow(model, pruning_ratio):
     
-    # Flatten the weights into a 1D array for sorting
+    weights = model.get_weights()
     flattened_weights = np.concatenate([layer.flatten() for layer in weights])
     
-    # Compute the number of weights to prune
     num_weights_to_prune = int(len(flattened_weights) * pruning_ratio)
-    
-    # Sort the weights in descending order
     sorted_weights = np.sort(np.abs(flattened_weights))[::-1]
     
-    # Find the threshold weight value to prune
     threshold = sorted_weights[num_weights_to_prune]
-    
-    # Set the weights above the threshold to zero
     pruned_weights = [np.where(np.abs(w) >= threshold, w, 0) for w in weights]
     
-    # Set the pruned weights back into the model
     model.set_weights(pruned_weights)
     
     return model
 
 
-def prune_model_tensorflow(model, pruning_ratio, PEpochs, batch_size, convert_tflite, quantization, logger,train_data, train_labels, val_data, val_labels):
+def prune_model_tensorflow(model, pruning_ratio, PEpochs, batch_size,train_data, train_labels, val_data, val_labels):
     
     if PEpochs == 0:
         pruning_params = {
@@ -74,20 +60,16 @@ def prune_model_tensorflow(model, pruning_ratio, PEpochs, batch_size, convert_tf
 
 
 def pytorch_random_unstructured_prune(model, pruning_ratio, pruning_epochs, device, train_loader, val_loader, logger,
-                                      is_yolo,PWInstance):
+                                      is_yolo, PWInstance, nc=0):
     plotpruning = PTPlotPruning(PWInstance)
     if is_yolo:
-        batch_size = 8  # Batch size for training
-        img_size = 640  # Input image size
-        nc = 52  # Number of classes
         hyp_path = 'yolov5/data/hyps/hyp.scratch-low.yaml'
         with open(hyp_path) as f:
             yolo_hyp = yaml.load(f, Loader=yaml.SafeLoader)
         
         yolo_hyp['label_smoothing'] = 0.0
-        model.nc = nc  # attach number of classes to model
-        model.hyp = yolo_hyp  # attach hyperparameters to model
-        # model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc  # attach class weights
+        model.nc = nc
+        model.hyp = yolo_hyp
         
         yolo_optimizer = torch.optim.SGD(model.parameters(), lr=yolo_hyp['lr0'], momentum=yolo_hyp['momentum'],
                                          weight_decay=yolo_hyp['weight_decay'])
@@ -113,32 +95,26 @@ def pytorch_random_unstructured_prune(model, pruning_ratio, pruning_epochs, devi
     model.train()
     for epoch in range(pruning_epochs):
         if is_yolo:
-            mloss = torch.zeros(3, device=device)  # mean losses
+            mloss = torch.zeros(3, device=device)
             pbar = tqdm(enumerate(train_loader), total=len(train_loader), bar_format=TQDM_BAR_FORMAT)
             print(('\n' + '%11s' * 7) % ('Epoch', 'GPU_mem', 'box_loss', 'obj_loss', 'cls_loss', 'Instances', 'Size'))
             for i, (imgs, targets, paths, _) in pbar:
                 imgs = imgs.to(device).float() / 255.0
                 targets = targets.to(device)
                 
-                # Forward pass
-                pred = model(imgs)  # forward
+                pred = model(imgs)
                 loss, loss_items = yolo_compute_loss(pred, targets)
                 
-                # Backward pass
                 loss.backward()
                 
-                # Optimize
                 yolo_optimizer.step()
                 yolo_optimizer.zero_grad()
                 
-                # Print progress
                 mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
                 mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
                 pbar.set_description(('%11s' * 2 + '%11.4g' * 5) %
                                      (f'{epoch + 1}/{pruning_epochs}', mem, *mloss, targets.shape[0], imgs.shape[-1]))
-                # print(f'Epoch {epoch}, Batch {batch_i}, Loss: {loss.item()}')
                 
-                # Update the learning rate
             scheduler.step()
         
         else:
@@ -147,7 +123,6 @@ def pytorch_random_unstructured_prune(model, pruning_ratio, pruning_epochs, devi
                 inputs, labels = inputs.to(device=device), labels.type(torch.LongTensor).to(device=device)
                 optimizer.zero_grad()
                 
-                # Convert the input tensor to the same data type as the weights tensor
                 weight_tensor = next(model.parameters()).data
                 inputs = inputs.to(weight_tensor.dtype)
                 
@@ -187,7 +162,8 @@ def pytorch_random_unstructured_prune(model, pruning_ratio, pruning_epochs, devi
             logger.info(
                 f'Pruning epoch {epoch + 1} / {pruning_epochs}  | validation loss : {val_loss:.4f} | validation accuracy : {val_accuracy * 100:.2f} % | {pruning_ratio * 100:.0f} % of weights pruned')
             plotpruning.on_epoch_end(epoch + 1, 100 * val_accuracy)
-    # Supprime les poids de facon permanente
+    
+    
     for name, module in model.named_modules():
         if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
             prune.remove(module, name='weight')
@@ -196,20 +172,17 @@ def pytorch_random_unstructured_prune(model, pruning_ratio, pruning_epochs, devi
 
 
 def pytorch_random_structured_prune(model, pruning_ratio, pruning_epochs, device, train_loader, val_loader, logger,
-                                    is_yolo,PWInstance):
+                                    is_yolo, PWInstance, nc=0):
     plotpruning = PTPlotPruning(PWInstance)
     if is_yolo:
-        batch_size = 8  # Batch size for training
-        img_size = 640  # Input image size
-        nc = 52  # Number of classes
+        
         hyp_path = 'yolov5/data/hyps/hyp.scratch-low.yaml'
         with open(hyp_path) as f:
             yolo_hyp = yaml.load(f, Loader=yaml.SafeLoader)
         
         yolo_hyp['label_smoothing'] = 0.0
-        model.nc = nc  # attach number of classes to model
-        model.hyp = yolo_hyp  # attach hyperparameters to model
-        # model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc  # attach class weights
+        model.nc = nc
+        model.hyp = yolo_hyp
         
         yolo_optimizer = torch.optim.SGD(model.parameters(), lr=yolo_hyp['lr0'], momentum=yolo_hyp['momentum'],
                                          weight_decay=yolo_hyp['weight_decay'])
@@ -230,37 +203,31 @@ def pytorch_random_structured_prune(model, pruning_ratio, pruning_epochs, device
             parameters_to_prune.append((module, 'weight'))
     
     for module, parameter_name in parameters_to_prune:
-        prune.random_structured(module, name=parameter_name, amount=pruning_ratio)
+        prune.random_structured(module, name=parameter_name, amount=pruning_ratio,dim=0)
     
     model.train()
     for epoch in range(pruning_epochs):
         if is_yolo:
-            mloss = torch.zeros(3, device=device)  # mean losses
+            mloss = torch.zeros(3, device=device)
             pbar = tqdm(enumerate(train_loader), total=len(train_loader), bar_format=TQDM_BAR_FORMAT)
             print(('\n' + '%11s' * 7) % ('Epoch', 'GPU_mem', 'box_loss', 'obj_loss', 'cls_loss', 'Instances', 'Size'))
             for i, (imgs, targets, paths, _) in pbar:
                 imgs = imgs.to(device).float() / 255.0
                 targets = targets.to(device)
                 
-                # Forward pass
-                pred = model(imgs)  # forward
+                pred = model(imgs)
                 loss, loss_items = yolo_compute_loss(pred, targets)
                 
-                # Backward pass
                 loss.backward()
                 
-                # Optimize
                 yolo_optimizer.step()
                 yolo_optimizer.zero_grad()
                 
-                # Print progress
                 mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
                 mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
                 pbar.set_description(('%11s' * 2 + '%11.4g' * 5) %
                                      (f'{epoch + 1}/{pruning_epochs}', mem, *mloss, targets.shape[0], imgs.shape[-1]))
-                # print(f'Epoch {epoch}, Batch {batch_i}, Loss: {loss.item()}')
                 
-                # Update the learning rate
             scheduler.step()
         
         else:
@@ -269,7 +236,6 @@ def pytorch_random_structured_prune(model, pruning_ratio, pruning_epochs, device
                 inputs, labels = inputs.to(device=device), labels.type(torch.LongTensor).to(device=device)
                 optimizer.zero_grad()
                 
-                # Convert the input tensor to the same data type as the weights tensor
                 weight_tensor = next(model.parameters()).data
                 inputs = inputs.to(weight_tensor.dtype)
                 
@@ -310,9 +276,6 @@ def pytorch_random_structured_prune(model, pruning_ratio, pruning_epochs, device
                 f'Pruning epoch {epoch + 1} / {pruning_epochs}  | validation loss : {val_loss:.4f} | validation accuracy : {val_accuracy * 100:.2f} % | {pruning_ratio * 100:.0f} % of weights pruned')
             plotpruning.on_epoch_end(epoch + 1, 100 * val_accuracy)
     
-    
-    
-    # Supprime les poids de facon permanente
     for name, module in model.named_modules():
         if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
             prune.remove(module, name='weight')
@@ -320,20 +283,16 @@ def pytorch_random_structured_prune(model, pruning_ratio, pruning_epochs, device
     return model
 
 
-def pytorch_magnitude_prune(model, pruning_ratio, pruning_epochs, device, train_loader, val_loader, logger, is_yolo,PWInstance):
+def pytorch_magnitude_prune(model, pruning_ratio, pruning_epochs, device, train_loader, val_loader, logger, is_yolo,PWInstance, nc=0):
     plotpruning = PTPlotPruning(PWInstance)
     if is_yolo:
-        batch_size = 8  # Batch size for training
-        img_size = 640  # Input image size
-        nc = 52  # Number of classes
         hyp_path = 'yolov5/data/hyps/hyp.scratch-low.yaml'
         with open(hyp_path) as f:
             yolo_hyp = yaml.load(f, Loader=yaml.SafeLoader)
         
         yolo_hyp['label_smoothing'] = 0.0
-        model.nc = nc  # attach number of classes to model
-        model.hyp = yolo_hyp  # attach hyperparameters to model
-        # model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc  # attach class weights
+        model.nc = nc
+        model.hyp = yolo_hyp
         
         yolo_optimizer = torch.optim.SGD(model.parameters(), lr=yolo_hyp['lr0'], momentum=yolo_hyp['momentum'],
                                          weight_decay=yolo_hyp['weight_decay'])
@@ -354,32 +313,30 @@ def pytorch_magnitude_prune(model, pruning_ratio, pruning_epochs, device, train_
     model.train()
     for epoch in range(pruning_epochs):
         if is_yolo:
-            mloss = torch.zeros(3, device=device)  # mean losses
+            mloss = torch.zeros(3, device=device)
             pbar = tqdm(enumerate(train_loader), total=len(train_loader), bar_format=TQDM_BAR_FORMAT)
             print(('\n' + '%11s' * 7) % ('Epoch', 'GPU_mem', 'box_loss', 'obj_loss', 'cls_loss', 'Instances', 'Size'))
             for i, (imgs, targets, paths, _) in pbar:
                 imgs = imgs.to(device).float() / 255.0
                 targets = targets.to(device)
                 
-                # Forward pass
-                pred = model(imgs)  # forward
+                
+                pred = model(imgs)
                 loss, loss_items = yolo_compute_loss(pred, targets)
                 
-                # Backward pass
+                
                 loss.backward()
                 
-                # Optimize
+                
                 yolo_optimizer.step()
                 yolo_optimizer.zero_grad()
                 
-                # Print progress
-                mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
-                mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
+                
+                mloss = (mloss * i + loss_items) / (i + 1)
+                mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'
                 pbar.set_description(('%11s' * 2 + '%11.4g' * 5) %
                                      (f'{epoch + 1}/{pruning_epochs}', mem, *mloss, targets.shape[0], imgs.shape[-1]))
-                # print(f'Epoch {epoch}, Batch {batch_i}, Loss: {loss.item()}')
-                
-                # Update the learning rate
+
             scheduler.step()
         
         else:
@@ -388,7 +345,6 @@ def pytorch_magnitude_prune(model, pruning_ratio, pruning_epochs, device, train_
                 inputs, labels = inputs.to(device=device), labels.type(torch.LongTensor).to(device=device)
                 optimizer.zero_grad()
                 
-                # Convert the input tensor to the same data type as the weights tensor
                 weight_tensor = next(model.parameters()).data
                 inputs = inputs.to(weight_tensor.dtype)
                 
@@ -429,9 +385,6 @@ def pytorch_magnitude_prune(model, pruning_ratio, pruning_epochs, device, train_
                 f'Pruning epoch {epoch + 1} / {pruning_epochs}  | validation loss : {val_loss:.4f} | validation accuracy : {val_accuracy * 100:.2f} % | {pruning_ratio * 100:.0f} % of weights pruned')
             plotpruning.on_epoch_end(epoch + 1, 100 * val_accuracy)
     
-    
-    
-    # Supprime les poids de facon permanente
     for name, module in model.named_modules():
         if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
             prune.remove(module, name='weight')
@@ -439,21 +392,18 @@ def pytorch_magnitude_prune(model, pruning_ratio, pruning_epochs, device, train_
     return model
 
 
-def prune_dynamic_model_pytorch(model, pruning_ratio, pruning_epochs, device, train_loader, val_loader, logger, is_yolo,PWInstance):
+def prune_dynamic_model_pytorch(model, pruning_ratio, pruning_epochs, device, train_loader, val_loader, logger, is_yolo,PWInstance, nc=0):
     logger.info(f'\n\nPruning dynamic model\n')
     plotpruning = PTPlotPruning(PWInstance)
     if is_yolo:
-        batch_size = 8  # Batch size for training
-        img_size = 640  # Input image size
-        nc = 52  # Number of classes
+        
         hyp_path = 'yolov5/data/hyps/hyp.scratch-low.yaml'
         with open(hyp_path) as f:
             yolo_hyp = yaml.load(f, Loader=yaml.SafeLoader)
         
         yolo_hyp['label_smoothing'] = 0.0
-        model.nc = nc  # attach number of classes to model
-        model.hyp = yolo_hyp  # attach hyperparameters to model
-        # model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc  # attach class weights
+        model.nc = nc
+        model.hyp = yolo_hyp
         
         yolo_optimizer = torch.optim.SGD(model.parameters(), lr=yolo_hyp['lr0'], momentum=yolo_hyp['momentum'],
                                          weight_decay=yolo_hyp['weight_decay'])
@@ -472,7 +422,6 @@ def prune_dynamic_model_pytorch(model, pruning_ratio, pruning_epochs, device, tr
     for epoch in range(pruning_epochs):
         for name, module in model.named_modules():
             
-            # if magnitude_pruning and channel_pruning :
             if isinstance(module, torch.nn.Conv2d):
                 # n=2  pour les conv2d --> pruning avec l2 norm
                 prune.ln_structured(module, name='weight', amount=pr_per_epoch, n=2, dim=0)
@@ -490,25 +439,19 @@ def prune_dynamic_model_pytorch(model, pruning_ratio, pruning_epochs, device, tr
                 imgs = imgs.to(device).float() / 255.0
                 targets = targets.to(device)
                 
-                # Forward pass
-                pred = model(imgs)  # forward
+                pred = model(imgs)
                 loss, loss_items = yolo_compute_loss(pred, targets)
                 
-                # Backward pass
                 loss.backward()
                 
-                # Optimize
                 yolo_optimizer.step()
                 yolo_optimizer.zero_grad()
                 
-                # Print progress
-                mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
-                mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
+                mloss = (mloss * i + loss_items) / (i + 1)
+                mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'
                 pbar.set_description(('%11s' * 2 + '%11.4g' * 5) %
                                      (f'{epoch + 1}/{pruning_epochs}', mem, *mloss, targets.shape[0], imgs.shape[-1]))
-                # print(f'Epoch {epoch}, Batch {batch_i}, Loss: {loss.item()}')
                 
-                # Update the learning rate
             scheduler.step()
         
         else:
@@ -517,7 +460,6 @@ def prune_dynamic_model_pytorch(model, pruning_ratio, pruning_epochs, device, tr
                 inputs, labels = inputs.to(device=device), labels.type(torch.LongTensor).to(device=device)
                 normal_optimizer.zero_grad()
                 
-                # Convert the input tensor to the same data type as the weights tensor
                 weight_tensor = next(model.parameters()).data
                 inputs = inputs.to(weight_tensor.dtype)
                 
@@ -558,8 +500,6 @@ def prune_dynamic_model_pytorch(model, pruning_ratio, pruning_epochs, device, tr
                 f'Pruning epoch {epoch + 1} / {pruning_epochs}  | validation loss : {val_loss:.4f} | validation accuracy : {val_accuracy * 100:.2f} % | {pr_per_epoch * (epoch + 1) * 100:.0f} % of weights pruned')
             plotpruning.on_epoch_end(epoch + 1, 100 * val_accuracy)
     
-    
-    # Supprime les poids de facon permanente
     for name, module in model.named_modules():
         if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
             prune.remove(module, name='weight')
@@ -612,21 +552,18 @@ def prune_global_structured_model_pytorch(model, pruning_ratio, logger):
 
 
 def prune_global_dynamic_model_pytorch(model, pruning_ratio, pruning_epochs, device, train_loader, val_loader, logger,
-                                       is_yolo,PWInstance):
+                                       is_yolo,PWInstance, nc =0):
     logger.info(f'\n\nPruning global model\n')
     plotpruning = PTPlotPruning(PWInstance)
     if is_yolo:
-        batch_size = 8  # Batch size for training
-        img_size = 640  # Input image size
-        nc = 52  # Number of classes
+        
         hyp_path = 'yolov5/data/hyps/hyp.scratch-low.yaml'
         with open(hyp_path) as f:
             yolo_hyp = yaml.load(f, Loader=yaml.SafeLoader)
         
         yolo_hyp['label_smoothing'] = 0.0
-        model.nc = nc  # attach number of classes to model
-        model.hyp = yolo_hyp  # attach hyperparameters to model
-        # model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc  # attach class weights
+        model.nc = nc
+        model.hyp = yolo_hyp
         
         yolo_optimizer = torch.optim.SGD(model.parameters(), lr=yolo_hyp['lr0'], momentum=yolo_hyp['momentum'],
                                          weight_decay=yolo_hyp['weight_decay'])
@@ -654,32 +591,26 @@ def prune_global_dynamic_model_pytorch(model, pruning_ratio, pruning_epochs, dev
         )
         
         if is_yolo:
-            mloss = torch.zeros(3, device=device)  # mean losses
+            mloss = torch.zeros(3, device=device)
             pbar = tqdm(enumerate(train_loader), total=len(train_loader), bar_format=TQDM_BAR_FORMAT)
             print(('\n' + '%11s' * 7) % ('Epoch', 'GPU_mem', 'box_loss', 'obj_loss', 'cls_loss', 'Instances', 'Size'))
             for i, (imgs, targets, paths, _) in pbar:
                 imgs = imgs.to(device).float() / 255.0
                 targets = targets.to(device)
                 
-                # Forward pass
-                pred = model(imgs)  # forward
+                pred = model(imgs)
                 loss, loss_items = yolo_compute_loss(pred, targets)
                 
-                # Backward pass
                 loss.backward()
                 
-                # Optimize
                 yolo_optimizer.step()
                 yolo_optimizer.zero_grad()
                 
-                # Print progress
-                mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
-                mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
+                mloss = (mloss * i + loss_items) / (i + 1)
+                mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'
                 pbar.set_description(('%11s' * 2 + '%11.4g' * 5) %
                                      (f'{epoch + 1}/{pruning_epochs}', mem, *mloss, targets.shape[0], imgs.shape[-1]))
-                # print(f'Epoch {epoch}, Batch {batch_i}, Loss: {loss.item()}')
                 
-                # Update the learning rate
             scheduler.step()
         
         else:
@@ -688,7 +619,6 @@ def prune_global_dynamic_model_pytorch(model, pruning_ratio, pruning_epochs, dev
                 inputs, labels = inputs.to(device=device), labels.type(torch.LongTensor).to(device=device)
                 optimizer.zero_grad()
                 
-                # Convert the input tensor to the same data type as the weights tensor
                 weight_tensor = next(model.parameters()).data
                 inputs = inputs.to(weight_tensor.dtype)
                 
@@ -753,14 +683,6 @@ def basic_magnitude_prune_model_pytorch(model, pruning_ratio, logger):
         param.data.mul_(mask)
     
     return model
-
-
-def GAL_prune_pytorch(model, pruning_ratio, PEpochs, batch_size, device, PWInstance, logger):
-    backbone_id = get_pytorch_backbone_layers_id(model)
-    backbone_model, head_model = extract_backbone_layers(model, backbone_id)
-    pruned_model = prune_backbone_with_gal(backbone_model, pruning_ratio, PEpochs, device)
-    
-    return pruned_model
 
 
 class TfPlotPruning(keras.callbacks.Callback):

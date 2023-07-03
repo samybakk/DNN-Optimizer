@@ -97,10 +97,18 @@ def evaluate_tensorflow_model(model, val_data, val_labels):
     return accuracy, avg_eval_time
 
 
-def load_tensorflow_data(dataset_path, img_size, batch_size):
+def load_tensorflow_data(dataset_path, img_size=(32,32), batch_size=8):
     if 'cifar-10' in dataset_path:
         (training_images, training_labels), (
         validation_images, validation_labels) = tf.keras.datasets.cifar10.load_data()
+        # Normalize the image data
+        training_images = training_images / 255.0
+        validation_images = validation_images / 255.0
+
+        # Convert labels to one-hot encoding
+        num_classes = 10  # Number of classes in CIFAR-10 dataset
+        training_labels = tf.keras.utils.to_categorical(training_labels, num_classes)
+        validation_labels = tf.keras.utils.to_categorical(validation_labels, num_classes)
         return training_images, training_labels, validation_images, validation_labels
     
     # Create a dataset for the training data
@@ -180,7 +188,7 @@ def load_pytorch_cifar10(dataset_path):
     return train_dataset, val_dataset
 
 
-def load_pytorch_dataset(dataset_path, batch_size=8, val_batch_size=16, train_fraction=1, val_fraction=1, logger=None):
+def load_pytorch_dataset(dataset_path, batch_size=8, val_batch_size=16, train_fraction=1, val_fraction=1):
     print(f'Loading dataset at path {dataset_path}')
     if 'cifar-10' in dataset_path.split(os.sep)[-1]:
         train_dataset, val_dataset = load_pytorch_cifar10(dataset_path=dataset_path)
