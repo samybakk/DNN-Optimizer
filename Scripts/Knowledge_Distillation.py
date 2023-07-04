@@ -39,7 +39,7 @@ def distill_model_yolo(student_model, teacher_model, dataset_path, KD_epochs, lo
                                      momentum=0.937,
                                      weight_decay=0.0005)
     ema = ModelEMA(student_model)
-    saved_model_path = 'Models' + os.sep + 'Temp' + os.sep + save_name + '.pt'
+    saved_model_path = 'Models' + os.sep + 'Temp' + os.sep + save_name + '_yolov5.pt'
     ckpt = {
         'epoch': 0,
         'best_fitness': 0,
@@ -107,7 +107,7 @@ def distill_model_yolo(student_model, teacher_model, dataset_path, KD_epochs, lo
     model_name = saved_model_path.split(os.sep)[-1]
     model = load_pytorch_model(model_dict, device, model_name, number_of_classes=nbr_classes)
     
-    shutil.rmtree(saved_model_path)
+    os.remove(saved_model_path)
     
     return model
 
@@ -118,7 +118,7 @@ def distill_model_pytorch(student_model, teacher_model, temperature, alpha, KD_e
     student_model.train()
 
     criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.SGD(student_model.parameters(), lr=0.00000001, momentum=0.9)
+    optimizer = torch.optim.SGD(student_model.parameters(), lr=0.0001, momentum=0.9)
     plotdk = PTPlotDK(PWInstance)
     for epoch in range(KD_epochs):
         loss_sum = 0.0
