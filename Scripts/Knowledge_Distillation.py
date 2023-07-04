@@ -14,9 +14,7 @@ from utils.torch_utils import de_parallel, ModelEMA
 from train import main as train_yolov5_kd
 
 
-def distill_model_tensorflow(model, teacher_model, dataset_path, batch_size, temperature, alpha, epochs, PWInstance,logger):
-    # train_data, train_labels, test_data, test_labels = load_and_prep_images(dataset_path,(28,28), batch_size, batch_size, 0.1,True)
-    train_data, train_labels, test_data, test_labels = load_mnist(epochs, batch_size, 0.1)
+def distill_model_tensorflow(model, teacher_model, train_data, train_labels, val_data, val_labels, temperature, alpha, epochs, PWInstance):
     
     distiller = TfDistiller(model, teacher_model)
     distiller.compile(
@@ -30,12 +28,10 @@ def distill_model_tensorflow(model, teacher_model, dataset_path, batch_size, tem
     callbacks = [TfPlotDK(PWInstance)]
     
     distiller.fit(train_data, train_labels, epochs=epochs, callbacks=callbacks)
-    # distiller.fit(train_data, epochs=epochs, callbacks=callbacks)
     
     print('Evaluating the distilled model')
-    distiller.evaluate(test_data, test_labels)
+    distiller.evaluate(val_data, val_labels)
     return model
-    # return model.student
 
 
 def distill_model_yolo(student_model, teacher_model, dataset_path, KD_epochs, logger,nbr_classes):
@@ -105,6 +101,7 @@ def distill_model_yolo(student_model, teacher_model, dataset_path, KD_epochs, lo
             self.artifact_alias = 'latest'
     
     args_dict = Args(dataset_path, teacher_model, KD_epochs)
+    os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
     train_yolov5_kd(args_dict)
     model = load_pytorch_model('runs/train/exp', 'gpu', False,
                                yaml_path=dataset_path + '/data.yaml')
@@ -240,7 +237,7 @@ class TfPlotDK(keras.callbacks.Callback):
         self.PW.on_dk_epoch_end_signal.connect(self.PW.update_dk_graph_data)
 
     def on_epoch_end(self, epoch, logs={}):
-        self.PW.on_dk_epoch_end_signal.emit(epoch, logs['sparse_categorical_accuracy'])
+        self.PW.on_dk_epoch_end_signal.emit(epoch+1, logs['sparse_categorical_accuracy'])
         
 class PTPlotDK():
     def __init__(self, PW):

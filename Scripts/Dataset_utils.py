@@ -97,18 +97,27 @@ def evaluate_tensorflow_model(model, val_data, val_labels):
     return accuracy, avg_eval_time
 
 
-def load_tensorflow_data(dataset_path, img_size=(32,32), batch_size=8):
+def load_tensorflow_data(dataset_path, train_fraction=1, val_fraction=1, img_size=(32,32), batch_size=8):
     if 'cifar-10' in dataset_path:
         (training_images, training_labels), (
         validation_images, validation_labels) = tf.keras.datasets.cifar10.load_data()
-        # Normalize the image data
+
+        train_num_samples = int(len(training_images) * train_fraction)
+        training_images = training_images[:train_num_samples]
+        training_labels = training_labels[:train_num_samples]
+        
+        val_num_samples = int(len(validation_images) * val_fraction)
+        validation_images = validation_images[:val_num_samples]
+        validation_labels = validation_labels[:val_num_samples]
+        
+        
         training_images = training_images / 255.0
         validation_images = validation_images / 255.0
 
-        # Convert labels to one-hot encoding
+        
         num_classes = 10  # Number of classes in CIFAR-10 dataset
-        training_labels = tf.keras.utils.to_categorical(training_labels, num_classes)
-        validation_labels = tf.keras.utils.to_categorical(validation_labels, num_classes)
+        # training_labels = tf.keras.utils.to_categorical(training_labels, num_classes)
+        # validation_labels = tf.keras.utils.to_categorical(validation_labels, num_classes)
         return training_images, training_labels, validation_images, validation_labels
     
     # Create a dataset for the training data

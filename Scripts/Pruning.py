@@ -44,7 +44,7 @@ def prune_model_tensorflow(model, pruning_ratio, PEpochs, batch_size,train_data,
     
     model_for_pruning = tfmot.sparsity.keras.prune_low_magnitude(model, **pruning_params)
     
-    model_for_pruning.compile(optimizer='adam', loss=tf.keras.losses.categorical_crossentropy,
+    model_for_pruning.compile(optimizer='adam', loss=tf.keras.losses.sparse_categorical_crossentropy,
                               metrics=['accuracy'])
     
     callbacks = [
@@ -55,6 +55,7 @@ def prune_model_tensorflow(model, pruning_ratio, PEpochs, batch_size,train_data,
                           validation_data=(val_data, val_labels), callbacks=callbacks)
     
     model_for_export = tfmot.sparsity.keras.strip_pruning(model_for_pruning)
+    model_for_export.compile(optimizer='adam',loss=tf.keras.losses.sparse_categorical_crossentropy, metrics=['accuracy'])
     
     return model_for_export
 

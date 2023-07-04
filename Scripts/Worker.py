@@ -65,13 +65,13 @@ class Worker(QRunnable):
             Dict['PWInstance'].undo_progress_signal.emit()
             Dict['PWInstance'].update_progress_signal.emit('Model initialized')
             if dataset:
-                train_data, train_labels, val_data, val_labels = load_tensorflow_data(Dict['dataset_path'],
+                train_data, train_labels, val_data, val_labels = load_tensorflow_data(Dict['dataset_path'],Dict['train_fraction'],Dict['validation_fraction'],
                                                                                       batch_size=Dict['batch_size'])
-                # initial_accuracy, initial_avg_eval_time = evaluate_tensorflow_model(model, val_data, val_labels)
-                # print(f'Accuracy of initial model : {initial_accuracy}')
-                # print(f'Average inference time of initial model : {initial_avg_eval_time}')
-                # logger.info(f'Accuracy of initial model : {initial_accuracy}')
-                # logger.info(f'Average inference time of initial model : {initial_avg_eval_time}')
+                initial_accuracy, initial_avg_eval_time = evaluate_tensorflow_model(model, val_data, val_labels)
+                print(f'Accuracy of initial model : {initial_accuracy}')
+                print(f'Average inference time of initial model : {initial_avg_eval_time}')
+                logger.info(f'Accuracy of initial model : {initial_accuracy}')
+                logger.info(f'Average inference time of initial model : {initial_avg_eval_time}')
             else:
                 train_data, train_labels, val_data, val_labels = None, None, None, None
             
@@ -87,9 +87,9 @@ class Worker(QRunnable):
             if Dict['Knowledge_Distillation']:
                 Dict['PWInstance'].update_progress_signal.emit('Starting Knowledge transfer...')
                 teacher_model = tf_load(Dict['teacher_model_path'])
-                model = distill_model_tensorflow(model, teacher_model, Dict['dataset_path'], Dict['batch_size'],
+                model = distill_model_tensorflow(model, teacher_model, train_data, train_labels, val_data, val_labels,
                                                  Dict['KD_temperature'], Dict['KD_alpha'], Dict['KD_epochs'],
-                                                 Dict['PWInstance'], logger)
+                                                 Dict['PWInstance'])
                 Dict['PWInstance'].undo_progress_signal.emit()
                 Dict['PWInstance'].update_progress_signal.emit('Knowledge transfer completed')
             
@@ -99,27 +99,29 @@ class Worker(QRunnable):
                 Dict['PWInstance'].undo_progress_signal.emit()
                 Dict['PWInstance'].update_progress_signal.emit('Quantization completed')
             
-            Dict['PWInstance'].final_size_signal.connect(Dict['PWInstance'].update_final_size)
             
-            final_accuracy, final_avg_eval_time = evaluate_tensorflow_model(model, val_data, val_labels)
-            print(f'Accuracy of final model : {final_accuracy}')
-            print(f'Average inference time of final model : {final_avg_eval_time}')
-            logger.info(f'Accuracy of final model : {final_accuracy}')
-            logger.info(f'Average inference time of final model : {final_avg_eval_time}')
+            if not Dict['Quantization'] and not Dict['convert_tflite']:
+                Dict['PWInstance'].final_size_signal.connect(Dict['PWInstance'].update_final_size)
+                
+                final_accuracy, final_avg_eval_time = evaluate_tensorflow_model(model, val_data, val_labels)
+                print(f'Accuracy of final model : {final_accuracy}')
+                print(f'Average inference time of final model : {final_avg_eval_time}')
+                logger.info(f'Accuracy of final model : {final_accuracy}')
+                logger.info(f'Average inference time of final model : {final_avg_eval_time}')
             
             Dict['PWInstance'].update_progress_signal.emit('Saving final model...')
             
-            if Dict['convert_tflite'] or Dict['Quantization'].isChecked():
-                open(log_dir + '.tflite', "wb").write(model)
+            if Dict['convert_tflite'] or Dict['Quantization']:
+                open(log_dir + Dict['save_name'] + '.tflite', "wb").write(model)
                 saved_model_path = log_dir + Dict['save_name'] + '.tflite'
                 
                 if Dict['Compressed']:
                     with zipfile.ZipFile(log_dir + Dict['save_name'] + '.zip', 'w',
                                          compression=zipfile.ZIP_DEFLATED) as f:
-                        f.write(log_dir + '.tflite')
+                        f.write(log_dir + Dict['save_name']+ '.tflite')
                     saved_model_path = Dict['save_name'] + '.zip'
                     if not Dict['save_unziped']:
-                        os.remove(log_dir + '.tflite')
+                        os.remove(log_dir + Dict['save_name']+ '.tflite')
             
             elif Dict['Compressed']:
                 model.save(log_dir + Dict['save_name'] + '.h5')
@@ -138,9 +140,8 @@ class Worker(QRunnable):
             Dict['PWInstance'].undo_progress_signal.emit()
             Dict['PWInstance'].update_progress_signal.emit('Model saved')
             
-            Dict['PWInstance'].final_size_signal.emit(str(round(os.stat(saved_model_path).st_size / (1024 ^ 2), 3)))
-            
-            self.finished.emit()
+            Dict['PWInstance'].final_size_signal.emit(round(os.stat(saved_model_path).st_size / (1024 ^ 3), 3))
+            self.signals.finished.emit(Dict['PWInstance'])
         
         elif Dict['framework'] == 'torch' and yolo:
             
