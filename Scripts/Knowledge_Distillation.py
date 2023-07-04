@@ -1,15 +1,13 @@
+import os
 from copy import deepcopy
 from datetime import datetime
 
-from torch.optim import lr_scheduler
-from tqdm import tqdm
 import shutil
 
 from Distiller import *
 from Dataset_utils import *
 import torch.nn.functional as F
 
-from utils.loss import ComputeLoss
 from utils.torch_utils import de_parallel, ModelEMA
 from train import main as train_yolov5_kd
 
@@ -34,14 +32,13 @@ def distill_model_tensorflow(model, teacher_model, train_data, train_labels, val
     return model
 
 
-def distill_model_yolo(student_model, teacher_model, dataset_path, KD_epochs, logger,nbr_classes):
+def distill_model_yolo(student_model, teacher_model, dataset_path, KD_epochs, logger,nbr_classes,save_name,batch_size,device):
     logger.info("\n\nStarting Knowledge Distillation\n")
     
     yolo_optimizer = torch.optim.SGD(student_model.parameters(), 0.01,
                                      momentum=0.937,
                                      weight_decay=0.0005)
     ema = ModelEMA(student_model)
-    save_name = 'kd'
     saved_model_path = 'Models' + os.sep + 'Temp' + os.sep + save_name + '.pt'
     ckpt = {
         'epoch': 0,
@@ -64,9 +61,9 @@ def distill_model_yolo(student_model, teacher_model, dataset_path, KD_epochs, lo
             self.teacher_weight = teacher_model
             self.cfg = ''
             self.data = dataset_path + '/data.yaml'
-            self.hyp = 'yolov5/data/hyps/hyp.no-augmentation.yaml'
+            self.hyp = 'yolov5-knowledge-distillation/data/hyps/hyp.scratch-low.yaml'
             self.epochs = KD_epochs
-            self.batch_size = 1
+            self.batch_size = batch_size
             self.imgsz = 640
             self.rect = False
             self.resume = False
@@ -78,14 +75,16 @@ def distill_model_yolo(student_model, teacher_model, dataset_path, KD_epochs, lo
             self.bucket = ''
             self.cache = 'ram'
             self.image_weights = False
-            self.device = ''
+            self.device = '0'
             self.multi_scale = False
             self.single_cls = False
             self.optimizer = 'SGD'
             self.sync_bn = False
             self.workers = 2
-            self.project = 'runs/train'
-            self.name = 'exp'
+            self.project = 'results' + os.sep + save_name
+            
+            self.name = 'yolov5kd'
+            
             self.exist_ok = False
             self.quad = False
             self.cos_lr = False
@@ -103,13 +102,12 @@ def distill_model_yolo(student_model, teacher_model, dataset_path, KD_epochs, lo
     args_dict = Args(dataset_path, teacher_model, KD_epochs)
     os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
     train_yolov5_kd(args_dict)
-    model = load_pytorch_model('runs/train/exp', 'gpu', False,
-                               yaml_path=dataset_path + '/data.yaml')
-    model_dict = torch.load('runs/train/exp', map_location='cpu')
+    load_path = 'results' + os.sep + save_name+ os.sep + 'yolov5kd'+ os.sep + 'weights' + os.sep + 'best.pt'
+    model_dict = torch.load( load_path , map_location='cpu')
     model_name = saved_model_path.split(os.sep)[-1]
-    model = load_pytorch_model(model_dict, 'gpu', model_name, number_of_classes=nbr_classes)
+    model = load_pytorch_model(model_dict, device, model_name, number_of_classes=nbr_classes)
     
-    shutil.rmtree('runs/train/exp')
+    shutil.rmtree(saved_model_path)
     
     return model
 

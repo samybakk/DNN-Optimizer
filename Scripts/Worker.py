@@ -279,7 +279,7 @@ class Worker(QRunnable):
                 Dict['PWInstance'].update_progress_signal.emit('Starting Knowledge transfer...')
                 
                 model = distill_model_yolo(model, Dict['teacher_model_path'], Dict['dataset_path'],
-                                           Dict['KD_epochs'], logger=logger,nbr_classes=nc_value)
+                                           Dict['KD_epochs'], logger=logger,nbr_classes=nc_value,save_name=Dict['save_name'],batch_size=Dict['batch_size'],device=Dict['device'])
                 Dict['PWInstance'].undo_progress_signal.emit()
                 Dict['PWInstance'].update_progress_signal.emit('Knowledge transfer completed')
             

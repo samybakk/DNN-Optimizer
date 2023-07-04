@@ -70,7 +70,7 @@ def load_pytorch_model(model_dict, device,model_name,number_of_classes=10):
         model.load_state_dict(model_dict['state_dict'])
         del model_dict
     
-    elif 'yolo' in model_name:
+    elif 'yolo' in model_name or 'best' in model_name:
         print(f'Loading YOLO model')
         resume = True
         
